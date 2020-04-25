@@ -32,7 +32,7 @@ const int pwmMotorBChannel = 1;
 const int pwmResolution = 10;
 const int pwmMinDuty = 400;
 const int pwmMaxDuty = 1023;
-ESP32MotorControl MotorControl = ESP32MotorControl();
+ESP32MotorControl motorControl = ESP32MotorControl();
 
 // // MPU control/status vars
 // bool dmpReady = false;  // set true if DMP init was successful
@@ -83,7 +83,7 @@ void setup() {
   ArduinoOTA.setHostname("BalancingBotESP32");
   ArduinoOTA
     .onStart([]() {
-      MotorControl.motorsStop();
+      motorControl.motorsStop();
       String type;
       if (ArduinoOTA.getCommand() == U_FLASH)
         type = "sketch";
@@ -113,9 +113,16 @@ void setup() {
   Serial.println("Ready tralal");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-
+  Serial.println("Waiting for OTA for 10 sec");
+  unsigned long start = millis();
+  while(millis() - start <= 10000) {
+      Serial.print(".");
+      ArduinoOTA.handle();
+      delay(500);
+  }
+  Serial.println("Continue.");
   Serial.println("Setup motors");
-  MotorControl.attachMotors(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
+  motorControl.attachMotors(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
 }
 
 // ================================================================
@@ -123,17 +130,17 @@ void setup() {
 // ================================================================
 
 void loop() {
-    ArduinoOTA.handle();  
+  ArduinoOTA.handle();
   Serial.println("loop");
   for (int i = 0; i <= 100; i++) {
-    MotorControl.motorForward(0, i);
-    MotorControl.motorForward(1, i);
+    motorControl.motorForward(0, i);
+    motorControl.motorForward(1, i);
     delay(100);
   }
   delay(1000);
   for (int i = 100; i >= 0; i--) {
-    MotorControl.motorForward(0, i);
-    MotorControl.motorForward(1, i);
+    motorControl.motorForward(0, i);
+    motorControl.motorForward(1, i);
     delay(100);
   }
 }
