@@ -6,6 +6,7 @@
 // #define INCLUDE_MOTORCONTROL_MODULE
 // #include <DabbleESP32.h>
 #include "I2Cdev.h"
+#include "math.h"
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
 #include "ESP32MotorControl.h"
 
@@ -16,8 +17,7 @@
 #endif
 
 MPU6050 mpu;
-#define INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
-#define LED_PIN 13 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
+#define INTERRUPT_PIN 19 
 bool blinkState = false;
 
 #define MOTOR_A1 32
@@ -134,55 +134,55 @@ void setup() {
   }
 
   //WIFI
-  Serial.println("Connecting to wifi");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(MYSSID, MYPASS);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-  //OTA
-  ArduinoOTA.setHostname("BalancingBotESP32");
-  ArduinoOTA
-    .onStart([]() {
-      motorControl.motorsStop();
-      String type;
-      if (ArduinoOTA.getCommand() == U_FLASH)
-        type = "sketch";
-      else // U_SPIFFS
-        type = "filesystem";
+  // Serial.println("Connecting to wifi");
+  // WiFi.mode(WIFI_STA);
+  // WiFi.begin(MYSSID, MYPASS);
+  // while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+  //   Serial.println("Connection Failed! Rebooting...");
+  //   delay(5000);
+  //   ESP.restart();
+  // }
+  // //OTA
+  // ArduinoOTA.setHostname("BalancingBotESP32");
+  // ArduinoOTA
+  //   .onStart([]() {
+  //     motorControl.motorsStop();
+  //     String type;
+  //     if (ArduinoOTA.getCommand() == U_FLASH)
+  //       type = "sketch";
+  //     else // U_SPIFFS
+  //       type = "filesystem";
 
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
-    })
-    .onEnd([]() {
-      Serial.println("\nEnd");
-    })
-    .onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-    })
-    .onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
-    });
+  //     // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+  //     Serial.println("Start updating " + type);
+  //   })
+  //   .onEnd([]() {
+  //     Serial.println("\nEnd");
+  //   })
+  //   .onProgress([](unsigned int progress, unsigned int total) {
+  //     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  //   })
+  //   .onError([](ota_error_t error) {
+  //     Serial.printf("Error[%u]: ", error);
+  //     if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+  //     else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+  //     else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+  //     else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+  //     else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  //   });
 
-  ArduinoOTA.begin();
+  // ArduinoOTA.begin();
 
-  Serial.println("Ready tralal");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.println("Waiting for OTA for 10 sec");
-  unsigned long start = millis();
-  while(millis() - start <= 10000) {
-      Serial.print(".");
-      ArduinoOTA.handle();
-      delay(500);
-  }
+  // Serial.println("Ready tralal");
+  // Serial.print("IP address: ");
+  // Serial.println(WiFi.localIP());
+  // Serial.println("Waiting for OTA for 10 sec");
+  // unsigned long start = millis();
+  // while(millis() - start <= 10000) {
+  //     Serial.print(".");
+  //     ArduinoOTA.handle();
+  //     delay(500);
+  // }
   Serial.println("");
   // Serial.println("Setup motors");
   // motorControl.attachMotors(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
@@ -193,8 +193,6 @@ void setup() {
 // ================================================================
 
 void loop() {
-  Serial.println("loop");
-  Serial.println(dmpReady);
   if (!dmpReady) return;
   // if programming failed, don't try to do anything
   if (mpuInterrupt) {
