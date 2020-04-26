@@ -10,10 +10,7 @@
 #include "I2Cdev.h"
 
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
-#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
 #include "Wire.h"
-#endif
-
 #include "Arduino.h"
 #include "ArduinoOTA.h"
 #include "keys.h"
@@ -21,9 +18,7 @@
 #include "ESP32MotorControl.h" 
 
 MPU6050 mpu; 
-// #define OUTPUT_READABLE_EULER
-#define OUTPUT_READABLE_YAWPITCHROLL
-#define INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
+#define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -43,10 +38,7 @@ VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
-// packet structure for InvenSense teapot demo
-uint8_t teapotPacket[14] = { '$', 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x00, '\r', '\n' };
-
-static volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
+static volatile bool mpuInterrupt = false;
 void IRAM_ATTR dmpDataReady() {
   mpuInterrupt = true;
 }
@@ -57,31 +49,16 @@ void IRAM_ATTR dmpDataReady() {
 #define MOTOR_B2 25
 ESP32MotorControl motorControl = ESP32MotorControl();
 
-
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
 
-void setup() {
-  // join I2C bus (I2Cdev library doesn't do this automatically)
-#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-  Wire.begin();
-  Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
-#elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_FASTWIRE
-  Fastwire::setup(400, true);
-#endif
 
-  Serial.begin(115200);
-
-  // initialize device
-  Serial.println(F("Initializing I2C devices..."));
+void setupMPU6050() {  
+  Serial.println(F("Initializing MPU6050"));
   mpu.initialize();
-  pinMode(INTERRUPT_PIN, INPUT);
-
-  // verify connection
-  Serial.println(F("Testing device connections..."));
+  pinMode(MPU_INTERRUPT_PIN, INPUT);
   Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
-
   // load and configure the DMP
   Serial.println(F("Initializing DMP..."));
   devStatus = mpu.dmpInitialize();
@@ -98,22 +75,14 @@ void setup() {
     mpu.CalibrateGyro(6);
     Serial.println();
     mpu.PrintActiveOffsets();
-    // turn on the DMP, now that it's ready
+
     Serial.println(F("Enabling DMP..."));
     mpu.setDMPEnabled(true);
-
-    // enable Arduino interrupt detection
-    Serial.print(F("Enabling interrupt detection (Arduino external interrupt "));
-    Serial.print(digitalPinToInterrupt(INTERRUPT_PIN));
-    Serial.println(F(")..."));
-    attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), dmpDataReady, RISING);
+    Serial.print(digitalPinToInterrupt(MPU_INTERRUPT_PIN));
+    attachInterrupt(digitalPinToInterrupt(MPU_INTERRUPT_PIN), dmpDataReady, RISING);
     mpuIntStatus = mpu.getIntStatus();
-
-    // set our DMP Ready flag so the main loop() function knows it's okay to use it
     Serial.println(F("DMP ready! Waiting for first interrupt..."));
     dmpReady = true;
-
-    // get expected DMP packet size for later comparison
     packetSize = mpu.dmpGetFIFOPacketSize();
   } else {
     // ERROR!
@@ -124,18 +93,23 @@ void setup() {
     Serial.print(devStatus);
     Serial.println(F(")"));
   }
+}
 
+void setupWifi() {
   Serial.println("Connecting to wifi");
   WiFi.mode(WIFI_STA);
   WiFi.begin(MYSSID, MYPASS);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
+    delay(2000);
     ESP.restart();
   }
-  Serial.println("Connected");
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
 
-
+void setupOTA() {
   // OTA
   ArduinoOTA.setHostname("BalancingBotESP32");
   ArduinoOTA
@@ -166,10 +140,9 @@ void setup() {
     });
 
   ArduinoOTA.begin();
+}
 
-  Serial.println("Ready tralal");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+void waitForOTA() {
   Serial.println("Waiting for OTA for 10 sec");
   unsigned long start = millis();
   while(millis() - start <= 10000) {
@@ -177,9 +150,21 @@ void setup() {
       ArduinoOTA.handle();
       delay(500);
   }
-  // Serial.println("");
-  // Serial.println("Setup motors");
+}
+
+void setupMPWM() {
   motorControl.attachMotors(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
+}
+
+void setup() {
+  Wire.begin();
+  Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
+  Serial.begin(115200);
+  setupMPU6050();
+  setupWifi();
+  setupOTA();
+  waitForOTA();
+  setupMPWM();
 }
 
 // ================================================================
@@ -189,10 +174,8 @@ void setup() {
 
 void loop() {
   ArduinoOTA.handle();
-  // if programming failed, don't try to do anything
   if (!dmpReady || !mpuInterrupt) return;
   mpuInterrupt = false;
-  // read a packet from FIFO
   static unsigned long lastOutput = 0;
   if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
     mpu.dmpGetQuaternion(&q, fifoBuffer);
@@ -213,29 +196,6 @@ void loop() {
     unsigned long now = millis();
     if (now - lastOutput > 250) {
       lastOutput = now;
-#ifdef OUTPUT_READABLE_QUATERNION
-    // display quaternion values in easy matrix form: w x y z
-    Serial.print("quat\t");
-    Serial.print(q.w);
-    Serial.print("\t");
-    Serial.print(q.x);
-    Serial.print("\t");
-    Serial.print(q.y);
-    Serial.print("\t");
-    Serial.println(q.z);
-#endif
-
-#ifdef OUTPUT_READABLE_EULER
-    Serial.print("euler\t");
-    Serial.print(euler[0] * 180 / M_PI);
-    Serial.print("\t");
-    Serial.print(euler[1] * 180 / M_PI);
-    Serial.print("\t");
-    Serial.println(euler[2] * 180 / M_PI);
-#endif
-
-
-    
 #ifdef OUTPUT_READABLE_YAWPITCHROLL
     Serial.print("ypr\t");
     Serial.print(ypr[0] * 180 / M_PI);
@@ -245,24 +205,7 @@ void loop() {
     Serial.print(ypr[2] * 180 / M_PI);
     Serial.print("\traw\t");
     Serial.print(ypr[2]);
-    /*
-      mpu.dmpGetAccel(&aa, fifoBuffer);
-      Serial.print("\tRaw Accl XYZ\t");
-      Serial.print(aa.x);
-      Serial.print("\t");
-      Serial.print(aa.y);
-      Serial.print("\t");
-      Serial.print(aa.z);
-      mpu.dmpGetGyro(&gy, fifoBuffer);
-      Serial.print("\tRaw Gyro XYZ\t");
-      Serial.print(gy.x);
-      Serial.print("\t");
-      Serial.print(gy.y);
-      Serial.print("\t");
-      Serial.print(gy.z);
-    */
     Serial.println();
-
 #endif
 
     }
