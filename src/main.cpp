@@ -6,11 +6,12 @@
 #include "ArduinoOTA.h"
 #include "keys.h"
 #include "math.h"
-#include "ESP32MotorControl.h" 
 #define CUSTOM_SETTINGS
 #define INCLUDE_TERMINAL_MODULE
 #define INCLUDE_DABBLEINPUTS_MODULE
 #include <DabbleESP32.h>
+#include "motor.h"
+
 
 MPU6050 mpu; 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
@@ -42,12 +43,11 @@ void IRAM_ATTR dmpDataReady() {
 #define MOTOR_A2 33
 #define MOTOR_B1 26
 #define MOTOR_B2 25
-ESP32MotorControl motorControl = ESP32MotorControl();
+ 
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
-
 
 void setupMPU6050() {  
   Serial.println(F("Initializing MPU6050"));
@@ -103,11 +103,12 @@ void setupWifi() {
   Serial.println(WiFi.localIP());
 }
 
+
 void setupOTA() {
   ArduinoOTA.setHostname("BalancingBotESP32");
   ArduinoOTA
     .onStart([]() {
-      motorControl.motorsStop();
+      motorsStop();
       String type;
       if (ArduinoOTA.getCommand() == U_FLASH)
         type = "sketch";
@@ -145,11 +146,8 @@ void waitForOTA() {
   }
 }
 
-void setupMPWM() {
-  motorControl.attachMotors(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
-}
-
 void setupBluetooth() {
+  Serial.println("Setub bluettooth");
   Dabble.begin("SelfBalancingBotisko");
 }
 
@@ -160,9 +158,10 @@ void setup() {
   setupMPU6050();
   setupWifi();
   setupOTA();
-  waitForOTA();
-  setupMPWM();
+  // waitForOTA();
+  setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
   setupBluetooth();
+  Serial.println("setup done");
 }
 
 // ================================================================
@@ -177,21 +176,24 @@ void loop() {
   Dabble.processInput();
   
   if (Dabble.isAppConnected()) {
-    uint16_t speed = map(Inputs.getPot1Value(), 0, 1023, 0, 100);
+    float speed = map(Inputs.getPot1Value(), 0, 1023, 0, 100);
     uint8_t direction = Inputs.getSlideSwitch1Value();
-
-    if (direction == 1) {
-      motorControl.motorForward(0, speed);
-      motorControl.motorForward(1, speed);
-    } else if (direction == 2) {
-      motorControl.motorReverse(0, speed);
-      motorControl.motorReverse(1, speed);
-    } else {
-      motorControl.motorsStop();
+    if (now - lastBluettothOutput > 250) {
+      lastBluettothOutput = now;
+      Serial.print("Motor duty: "); Serial.print(speed); Serial.print(" dir: "); 
+      Serial.println(direction);
     }
-    // if (now - lastBluettothOutput > 250) {
-    //   lastBluettothOutput = now;
-    // }
+    if (direction == 0) {
+      motorsStop();
+    } else {
+      if (direction == 2) {
+        // motorsReverse(speed);
+        speed = -1.0 * speed;
+      } else {
+        // motorsForward(speed);
+      }
+      motorsGo(speed);
+    }
   }
   
   if (!dmpReady || !mpuInterrupt) return;
