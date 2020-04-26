@@ -1,21 +1,16 @@
 
-// #include "Arduino.h"s
-// #define CUSTOM_SETTINGS
-// #define INCLUDE_TERMINAL_MODULE
-// #define INCLUDE_MOTORCONTROL_MODULE
-// #include <DabbleESP32.h>
-
-// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
-// for both classes must be in the include path of your project
+#include "Arduino.h"
 #include "I2Cdev.h"
-
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
 #include "Wire.h"
-#include "Arduino.h"
 #include "ArduinoOTA.h"
 #include "keys.h"
 #include "math.h"
 #include "ESP32MotorControl.h" 
+#define CUSTOM_SETTINGS
+#define INCLUDE_TERMINAL_MODULE
+#define INCLUDE_DABBLEINPUTS_MODULE
+#include <DabbleESP32.h>
 
 MPU6050 mpu; 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
@@ -78,7 +73,6 @@ void setupMPU6050() {
 
     Serial.println(F("Enabling DMP..."));
     mpu.setDMPEnabled(true);
-    Serial.print(digitalPinToInterrupt(MPU_INTERRUPT_PIN));
     attachInterrupt(digitalPinToInterrupt(MPU_INTERRUPT_PIN), dmpDataReady, RISING);
     mpuIntStatus = mpu.getIntStatus();
     Serial.println(F("DMP ready! Waiting for first interrupt..."));
@@ -110,7 +104,6 @@ void setupWifi() {
 }
 
 void setupOTA() {
-  // OTA
   ArduinoOTA.setHostname("BalancingBotESP32");
   ArduinoOTA
     .onStart([]() {
@@ -156,6 +149,10 @@ void setupMPWM() {
   motorControl.attachMotors(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
 }
 
+void setupBluetooth() {
+  Dabble.begin("SelfBalancingBotisko");
+}
+
 void setup() {
   Wire.begin();
   Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
@@ -165,6 +162,7 @@ void setup() {
   setupOTA();
   waitForOTA();
   setupMPWM();
+  setupBluetooth();
 }
 
 // ================================================================
@@ -173,7 +171,29 @@ void setup() {
 
 
 void loop() {
+  static unsigned long lastBluettothOutput = 0;
+  unsigned long now = millis();
   ArduinoOTA.handle();
+  Dabble.processInput();
+  
+  if (Dabble.isAppConnected()) {
+    uint16_t speed = map(Inputs.getPot1Value(), 0, 1023, 0, 100);
+    uint8_t direction = Inputs.getSlideSwitch1Value();
+
+    if (direction == 1) {
+      motorControl.motorForward(0, speed);
+      motorControl.motorForward(1, speed);
+    } else if (direction == 2) {
+      motorControl.motorReverse(0, speed);
+      motorControl.motorReverse(1, speed);
+    } else {
+      motorControl.motorsStop();
+    }
+    // if (now - lastBluettothOutput > 250) {
+    //   lastBluettothOutput = now;
+    // }
+  }
+  
   if (!dmpReady || !mpuInterrupt) return;
   mpuInterrupt = false;
   static unsigned long lastOutput = 0;
@@ -183,17 +203,16 @@ void loop() {
     mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
     mpu.dmpGetEuler(euler, &q);
     double angle = abs(ypr[2]);
-    int speed = min(angle, M_PI) * 100 / M_PI;
-    Serial.print("speed: "); Serial.println(speed); 
-    if (ypr[2] < 0) {
-      motorControl.motorReverse(0, speed);
-      motorControl.motorReverse(1, speed);
-    } else {
-      motorControl.motorForward(0, speed);
-      motorControl.motorForward(1, speed);
-    }
-    Serial.print(ypr[2] * 180 / M_PI);
-    unsigned long now = millis();
+    // int speed = min(angle, M_PI) * 100 / M_PI;
+    // Serial.print("speed: "); Serial.println(speed); 
+    // if (ypr[2] < 0) {
+    //   motorControl.motorReverse(0, speed);
+    //   motorControl.motorReverse(1, speed);
+    // } else {
+    //   motorControl.motorForward(0, speed);
+    //   motorControl.motorForward(1, speed);
+    // }
+
     if (now - lastOutput > 250) {
       lastOutput = now;
 #ifdef OUTPUT_READABLE_YAWPITCHROLL
