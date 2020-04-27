@@ -11,6 +11,7 @@
 #define INCLUDE_DABBLEINPUTS_MODULE
 #include <DabbleESP32.h>
 #include "motor.h"
+#include "PID_v1.h"
 
 
 MPU6050 mpu; 
@@ -45,6 +46,15 @@ void IRAM_ATTR dmpDataReady() {
 #define MOTOR_B2 25
  
 
+double targetAngle = 0;
+double inputAngle;
+double pidOutput;
+double const initialPidKp=1, initialPidKi = 0, initialPikKd = 0; 
+double pidKp=initialPidKp, pidKi=initialPidKi, pidKd=initialPikKd;
+
+//Specify the links and initial tuning parameters
+PID pid(&inputAngle, &pidOutput, &targetAngle, pidKp, pidKi, pidKd, DIRECT);
+
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -66,10 +76,10 @@ void setupMPU6050() {
   // make sure it worked (returns 0 if so)
   if (devStatus == 0) {
     // Calibration Time: generate offsets and calibrate our MPU6050
-    mpu.CalibrateAccel(6);
-    mpu.CalibrateGyro(6);
-    Serial.println();
-    mpu.PrintActiveOffsets();
+    // mpu.CalibrateAccel(6);
+    // mpu.CalibrateGyro(6);
+    // Serial.println();
+    // mpu.PrintActiveOffsets();
 
     Serial.println(F("Enabling DMP..."));
     mpu.setDMPEnabled(true);
@@ -161,6 +171,8 @@ void setup() {
   // waitForOTA();
   setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
   setupBluetooth();
+  pid.SetMode(AUTOMATIC);
+  pid.SetOutputLimits(-60, 60);
   Serial.println("setup done");
 }
 
@@ -169,67 +181,83 @@ void setup() {
 // ================================================================
 
 
-void loop() {
-  static unsigned long lastBluettothOutput = 0;
-  unsigned long now = millis();
-  ArduinoOTA.handle();
-  Dabble.processInput();
-  
-  if (Dabble.isAppConnected()) {
-    float speed = map(Inputs.getPot1Value(), 0, 1023, 0, 100);
-    uint8_t direction = Inputs.getSlideSwitch1Value();
-    if (now - lastBluettothOutput > 250) {
-      lastBluettothOutput = now;
-      Serial.print("Motor duty: "); Serial.print(speed); Serial.print(" dir: "); 
-      Serial.println(direction);
-    }
-    if (direction == 0) {
-      motorsStop();
-    } else {
-      if (direction == 2) {
-        // motorsReverse(speed);
-        speed = -1.0 * speed;
-      } else {
-        // motorsForward(speed);
-      }
-      motorsGo(speed);
-    }
-  }
-  
+void processMPUData() {
   if (!dmpReady || !mpuInterrupt) return;
   mpuInterrupt = false;
+  mpuIntStatus = mpu.getIntStatus();
   static unsigned long lastOutput = 0;
   if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
     mpu.dmpGetQuaternion(&q, fifoBuffer);
     mpu.dmpGetGravity(&gravity, &q);
     mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-    mpu.dmpGetEuler(euler, &q);
-    double angle = abs(ypr[2]);
-    // int speed = min(angle, M_PI) * 100 / M_PI;
-    // Serial.print("speed: "); Serial.println(speed); 
-    // if (ypr[2] < 0) {
-    //   motorControl.motorReverse(0, speed);
-    //   motorControl.motorReverse(1, speed);
-    // } else {
-    //   motorControl.motorForward(0, speed);
-    //   motorControl.motorForward(1, speed);
-    // }
-
+    // inputAngle = ypr[2];
+    inputAngle = ypr[2] * 180 / M_PI;
+    pid.Compute();
+    // double speed = constrain(pidOutput, -100.0, 100.0);
+    double speed = pidOutput;
+    if (speed < 0) {
+      speed = speed - 40;
+    } else {
+      speed = speed + 40;
+    }
+    motorsGo(speed);
+    unsigned long now = millis();
     if (now - lastOutput > 250) {
       lastOutput = now;
-#ifdef OUTPUT_READABLE_YAWPITCHROLL
-    Serial.print("ypr\t");
-    Serial.print(ypr[0] * 180 / M_PI);
-    Serial.print("\t");
-    Serial.print(ypr[1] * 180 / M_PI);
-    Serial.print("\t");
-    Serial.print(ypr[2] * 180 / M_PI);
-    Serial.print("\traw\t");
-    Serial.print(ypr[2]);
-    Serial.println();
-#endif
-
+      Serial.print("An: ");
+      Serial.println(inputAngle);
+      Serial.print("PID output: ");
+      Serial.print(pidOutput);
+      Serial.print(" speed ");
+      Serial.println(speed);
     }
+  }
+}
+
+static unsigned long loopSum = 0;
+static unsigned int loopCount = 0;
+
+void loop() {
+  unsigned long loopStart = millis();
+  static uint16_t lastPot1Value = 0;
+  static uint16_t lastPot2Value = 0;
+  uint8_t onOff = 0;
+  ArduinoOTA.handle();
+
+  Dabble.processInput();
+  if (Dabble.isAppConnected()) {
+    uint16_t pot1Value = Inputs.getPot1Value();
+    uint16_t pot2Value = Inputs.getPot2Value();
+    onOff = Inputs.getSlideSwitch1Value();
+    if (pot1Value != lastPot1Value) {
+      lastPot1Value = pot1Value;
+      pidKp = pot1Value / 100.0;
+      Serial.print("Changing KP: "); Serial.println(pidKp); 
+      pid.SetTunings(pidKp, pidKi, pidKd);
+    }
+    if (pot2Value != lastPot2Value) {
+      lastPot2Value = pot2Value;
+      pidKi = pot2Value / 100.0;
+      Serial.print("Changing KI: "); Serial.println(pidKi); 
+      pid.SetTunings(pidKp, pidKi, pidKd);
+    }
+  }
+
+  if (onOff > 0)  {
+    processMPUData();
+  } else {
+    motorsStop();
+  }
+
+  loopSum += millis() - loopStart;
+  loopCount++;
+  if (loopSum >= 1000) {
+    unsigned long average = loopSum / loopCount;
+    Serial.print("Loops "); Serial.print(loopCount); Serial.print(" in "); Serial.println(loopSum);
+    Serial.print("Average loop duration: "); 
+    Serial.println(average);
+    loopSum = 0;
+    loopCount = 0;
   }
 }
 
