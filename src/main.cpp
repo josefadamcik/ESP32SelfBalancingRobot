@@ -63,6 +63,7 @@ int8_t rPidKd; // =0..100 slider position
 bool enginesOn = true;
 int8_t speedLimit = 50;
 
+
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -173,8 +174,8 @@ void setupBluetooth() {
   RemoteXY.pidKiEdit = pidKi;
   RemoteXY.pidKd = 50;
   RemoteXY.pidKdEdit = pidKd;
-  RemoteXY.motorLimitEdit = speedLimit;
   RemoteXY.motorLimit = speedLimit;
+  sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
 }
 
 void setup() {
@@ -213,8 +214,6 @@ void processMPUData() {
     if (enginesOn && RemoteXY.pidOn) {
       motorsGo(pidSpeed);
       speed = pidSpeed;
-      RemoteXY.manualSpeed1 = map(speed, -100, 100, 0, 100);
-      RemoteXY.manualSpeed2 = map(speed, -100, 100, 0, 100);
     }
     unsigned long now = millis();
     if (now - lastOutput > 250) {
@@ -236,22 +235,20 @@ void loop() {
   RemoteXY_Handler();
   enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
 
-  RemoteXY.ledState_g = enginesOn ? 255: 0;
-  RemoteXY.ledState_r = !enginesOn ? 255: 0;
+  if (RemoteXY.buttonCalibrate) {
+      mpu.CalibrateAccel(6);
+      mpu.CalibrateGyro(6);
+      mpu.PrintActiveOffsets();
+  }
 
   if (RemoteXY.motorLimit != speedLimit) {
     speedLimit = RemoteXY.motorLimit;
-    RemoteXY.motorLimitEdit = speedLimit;
+    sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
     pid.SetOutputLimits(-speedLimit, speedLimit);
   }
   
   if (!RemoteXY.pidOn) {
-      if (RemoteXY.joystickA_y == 0) {
-        speed = map(RemoteXY.manualSpeed1, 0, 100, -100, 100);  
-      } else {
-        speed = RemoteXY.joystickA_y;
-      }
-      
+      speed = RemoteXY.joystickA_y;
       speed = constrain(speed, -speedLimit, speedLimit);
       if (enginesOn) {
         motorsGo(speed);
@@ -262,13 +259,27 @@ void loop() {
   }
   processMPUData();
 
+  RemoteXY.ledState_g = enginesOn ? 255: 0;
+  RemoteXY.ledState_r = !enginesOn ? 255: 0;
   RemoteXY.angle = map(inputAngle, -90, 90, 0, 100);
   RemoteXY.graph_var1 = inputAngle;
   RemoteXY.graph_var2 = pidOutput;
   RemoteXY.graph_var3 = speed;
   RemoteXY.speed = map(speed, -100, 100, 0, 100);
-  RemoteXY.manualSpeed1 = RemoteXY.speed;
-  RemoteXY.manualSpeed2 = RemoteXY.speed;
+  if (abs(inputAngle) < 2) {
+    RemoteXY.ledBallance_r = 0;
+    RemoteXY.ledBallance_g = 255;
+    RemoteXY.ledBallance_b = 0;
+  } else if (abs(inputAngle) < 8) {
+    RemoteXY.ledBallance_r = 255;
+    RemoteXY.ledBallance_g = 255;
+    RemoteXY.ledBallance_b = 0;
+  } else {
+    RemoteXY.ledBallance_r = 255;
+    RemoteXY.ledBallance_g = 0;
+    RemoteXY.ledBallance_b = 0;
+  }
+
   
   // Dabble.processInput();
   // if (Dabble.isAppConnected()) {
