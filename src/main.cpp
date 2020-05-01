@@ -6,13 +6,34 @@
 #include "ArduinoOTA.h"
 #include "keys.h"
 #include "math.h"
-#define CUSTOM_SETTINGS
-#define INCLUDE_TERMINAL_MODULE
-#define INCLUDE_DABBLEINPUTS_MODULE
-#include <DabbleESP32.h>
 #include "motor.h"
 #include "PID_v1.h"
+#define REMOTEXY_MODE__ESP32CORE_BLE
+#include <RemoteXY.h>
 
+// RemoteXY connection settings 
+#define REMOTEXY_BLUETOOTH_NAME "SelfBalancingRobot"
+#pragma pack(push, 1)
+uint8_t RemoteXY_CONF[] =
+  { 255,10,0,12,0,164,0,10,13,4,
+  131,1,1,1,22,7,1,2,31,67,
+  111,110,116,114,111,108,108,0,131,0,
+  26,1,20,7,2,2,31,83,116,97,
+  116,117,115,0,68,18,4,15,93,45,
+  2,8,36,135,1,0,4,47,12,12,
+  1,2,31,88,0,66,132,83,3,13,
+  10,2,2,24,129,0,3,15,5,4,
+  1,17,107,112,0,129,0,4,24,3,
+  4,1,17,107,105,0,129,0,3,32,
+  5,4,1,17,107,100,0,7,52,74,
+  15,20,5,1,2,26,2,7,52,74,
+  23,20,5,1,2,26,2,7,52,74,
+  31,20,5,1,2,26,2,65,7,83,
+  49,9,9,1,4,128,9,15,63,5,
+  1,2,26,4,128,9,23,63,5,1,
+  2,26,4,128,9,31,63,5,1,2,
+  26 };
+  
 
 MPU6050 mpu; 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
@@ -49,11 +70,49 @@ void IRAM_ATTR dmpDataReady() {
 double targetAngle = 0;
 double inputAngle;
 double pidOutput;
+double speed;
 double const initialPidKp=1, initialPidKi = 0, initialPikKd = 0; 
 double pidKp=initialPidKp, pidKi=initialPidKi, pidKd=initialPikKd;
 
 //Specify the links and initial tuning parameters
 PID pid(&inputAngle, &pidOutput, &targetAngle, pidKp, pidKi, pidKd, DIRECT);
+
+
+int16_t rPidKpEdit;  // 32767.. +32767 
+int16_t rPidKiEdit;  // 32767.. +32767 
+int16_t rPidKdEdit;  // 32767.. +32767 
+int8_t rPidKp; // =0..100 slider position 
+int8_t rPidKi; // =0..100 slider position 
+int8_t rPidKd; // =0..100 slider position 
+static unsigned long loopSum = 0;
+static unsigned int loopCount = 0;
+bool enginesOn = true;
+
+// this structure defines all the variables and events of your control interface 
+struct {
+
+    // input variables
+  uint8_t butttonStop; // =1 if button pressed, else =0 
+  int16_t pidKpEdit;  // 32767.. +32767 
+  int16_t pidKiEdit;  // 32767.. +32767 
+  int16_t pidKdEdit;  // 32767.. +32767 
+  int8_t pidKp; // =0..100 slider position 
+  int8_t pidKi; // =0..100 slider position 
+  int8_t pidKd; // =0..100 slider position 
+
+    // output variables
+  float graph_var1;
+  float graph_var2;
+  int8_t angle; // =0..100 level position 
+  uint8_t ledState_r; // =0..255 LED Red brightness 
+  uint8_t ledState_g; // =0..255 LED Green brightness 
+  uint8_t ledState_b; // =0..255 LED Blue brightness 
+
+    // other variable
+  uint8_t connect_flag;  // =1 if wire connected, else =0 
+
+} RemoteXY;
+#pragma pack(pop)
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -158,7 +217,11 @@ void waitForOTA() {
 
 void setupBluetooth() {
   Serial.println("Setub bluettooth");
-  Dabble.begin("SelfBalancingBotisko");
+  RemoteXY_Init();
+  RemoteXY.pidKp = pidKp;
+  RemoteXY.pidKpEdit = pidKp;
+  RemoteXY.pidKi = pidKi;
+  RemoteXY.pidKiEdit = pidKi;
 }
 
 void setup() {
@@ -194,13 +257,15 @@ void processMPUData() {
     inputAngle = ypr[2] * 180 / M_PI;
     pid.Compute();
     // double speed = constrain(pidOutput, -100.0, 100.0);
-    double speed = pidOutput;
+    speed = pidOutput;
     if (speed < 0) {
-      speed = speed - 40;
+      speed = speed - 10;
     } else {
-      speed = speed + 40;
+      speed = speed + 10;
     }
-    motorsGo(speed);
+    if (enginesOn) {
+      motorsGo(speed);
+    }
     unsigned long now = millis();
     if (now - lastOutput > 250) {
       lastOutput = now;
@@ -214,41 +279,45 @@ void processMPUData() {
   }
 }
 
-static unsigned long loopSum = 0;
-static unsigned int loopCount = 0;
 
 void loop() {
   unsigned long loopStart = millis();
-  static uint16_t lastPot1Value = 0;
-  static uint16_t lastPot2Value = 0;
-  uint8_t onOff = 0;
   ArduinoOTA.handle();
-
-  Dabble.processInput();
-  if (Dabble.isAppConnected()) {
-    uint16_t pot1Value = Inputs.getPot1Value();
-    uint16_t pot2Value = Inputs.getPot2Value();
-    onOff = Inputs.getSlideSwitch1Value();
-    if (pot1Value != lastPot1Value) {
-      lastPot1Value = pot1Value;
-      pidKp = pot1Value / 100.0;
-      Serial.print("Changing KP: "); Serial.println(pidKp); 
-      pid.SetTunings(pidKp, pidKi, pidKd);
-    }
-    if (pot2Value != lastPot2Value) {
-      lastPot2Value = pot2Value;
-      pidKi = pot2Value / 100.0;
-      Serial.print("Changing KI: "); Serial.println(pidKi); 
-      pid.SetTunings(pidKp, pidKi, pidKd);
-    }
+  RemoteXY_Handler();
+  if (RemoteXY.butttonStop) {
+    enginesOn = !enginesOn;
   }
 
-  if (onOff > 0)  {
-    processMPUData();
-  } else {
+  RemoteXY.ledState_g = enginesOn ? 255: 0;
+  RemoteXY.ledState_r = !enginesOn ? 255: 0;
+  RemoteXY.angle = inputAngle;
+  RemoteXY.graph_var1 = speed;
+  RemoteXY.graph_var2 = pidOutput;
+  
+  // Dabble.processInput();
+  // if (Dabble.isAppConnected()) {
+  //   uint16_t pot1Value = Inputs.getPot1Value();
+  //   uint16_t pot2Value = Inputs.getPot2Value();
+  //   onOff = Inputs.getSlideSwitch1Value();
+  //   if (pot1Value != lastPot1Value) {
+  //     lastPot1Value = pot1Value;
+  //     pidKp = pot1Value / 100.0;
+  //     Serial.print("Changing KP: "); Serial.println(pidKp); 
+  //     pid.SetTunings(pidKp, pidKi, pidKd);
+  //   }
+  //   if (pot2Value != lastPot2Value) {
+  //     lastPot2Value = pot2Value;
+  //     pidKi = pot2Value / 100.0;
+  //     Serial.print("Changing KI: "); Serial.println(pidKi); 
+  //     pid.SetTunings(pidKp, pidKi, pidKd);
+  //   }
+  // }
+
+  processMPUData();
+  if (!enginesOn) {
     motorsStop();
   }
-
+    
   loopSum += millis() - loopStart;
   loopCount++;
   if (loopSum >= 1000) {

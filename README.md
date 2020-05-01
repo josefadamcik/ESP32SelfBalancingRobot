@@ -11,6 +11,7 @@
 - Build&IDE: Platformio 
 - ESP32 Arduino Core
 - For libraries see platformio.ini
+- Currently also uses RemoteXY library and app for controll. Just download the RemoteXY library and place it in the lib fodler.
 
 
 ## Licence
