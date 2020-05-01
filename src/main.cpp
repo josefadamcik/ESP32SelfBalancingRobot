@@ -8,33 +8,8 @@
 #include "math.h"
 #include "motor.h"
 #include "PID_v1.h"
-#define REMOTEXY_MODE__ESP32CORE_BLE
-#include <RemoteXY.h>
-
-// RemoteXY connection settings 
-#define REMOTEXY_BLUETOOTH_NAME "SelfBalancingRobot"
-#pragma pack(push, 1)
-uint8_t RemoteXY_CONF[] =
-  { 255,10,0,12,0,164,0,10,13,4,
-  131,1,1,1,22,7,1,2,31,67,
-  111,110,116,114,111,108,108,0,131,0,
-  26,1,20,7,2,2,31,83,116,97,
-  116,117,115,0,68,18,4,15,93,45,
-  2,8,36,135,1,0,4,47,12,12,
-  1,2,31,88,0,66,132,83,3,13,
-  10,2,2,24,129,0,3,15,5,4,
-  1,17,107,112,0,129,0,4,24,3,
-  4,1,17,107,105,0,129,0,3,32,
-  5,4,1,17,107,100,0,7,52,74,
-  15,20,5,1,2,26,2,7,52,74,
-  23,20,5,1,2,26,2,7,52,74,
-  31,20,5,1,2,26,2,65,7,83,
-  49,9,9,1,4,128,9,15,63,5,
-  1,2,26,4,128,9,23,63,5,1,
-  2,26,4,128,9,31,63,5,1,2,
-  26 };
+#include "remote.h"
   
-
 MPU6050 mpu; 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
 
@@ -65,7 +40,6 @@ void IRAM_ATTR dmpDataReady() {
 #define MOTOR_A2 33
 #define MOTOR_B1 26
 #define MOTOR_B2 25
- 
 
 double targetAngle = 0;
 double inputAngle;
@@ -84,35 +58,10 @@ int16_t rPidKdEdit;  // 32767.. +32767
 int8_t rPidKp; // =0..100 slider position 
 int8_t rPidKi; // =0..100 slider position 
 int8_t rPidKd; // =0..100 slider position 
-static unsigned long loopSum = 0;
-static unsigned int loopCount = 0;
+// static unsigned long loopSum = 0;
+// static unsigned int loopCount = 0;
 bool enginesOn = true;
-
-// this structure defines all the variables and events of your control interface 
-struct {
-
-    // input variables
-  uint8_t butttonStop; // =1 if button pressed, else =0 
-  int16_t pidKpEdit;  // 32767.. +32767 
-  int16_t pidKiEdit;  // 32767.. +32767 
-  int16_t pidKdEdit;  // 32767.. +32767 
-  int8_t pidKp; // =0..100 slider position 
-  int8_t pidKi; // =0..100 slider position 
-  int8_t pidKd; // =0..100 slider position 
-
-    // output variables
-  float graph_var1;
-  float graph_var2;
-  int8_t angle; // =0..100 level position 
-  uint8_t ledState_r; // =0..255 LED Red brightness 
-  uint8_t ledState_g; // =0..255 LED Green brightness 
-  uint8_t ledState_b; // =0..255 LED Blue brightness 
-
-    // other variable
-  uint8_t connect_flag;  // =1 if wire connected, else =0 
-
-} RemoteXY;
-#pragma pack(pop)
+int8_t speedLimit = 50;
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -218,10 +167,14 @@ void waitForOTA() {
 void setupBluetooth() {
   Serial.println("Setub bluettooth");
   RemoteXY_Init();
-  RemoteXY.pidKp = pidKp;
+  RemoteXY.pidKp = 50;
   RemoteXY.pidKpEdit = pidKp;
-  RemoteXY.pidKi = pidKi;
+  RemoteXY.pidKi = 50;
   RemoteXY.pidKiEdit = pidKi;
+  RemoteXY.pidKd = 50;
+  RemoteXY.pidKdEdit = pidKd;
+  RemoteXY.motorLimitEdit = speedLimit;
+  RemoteXY.motorLimit = speedLimit;
 }
 
 void setup() {
@@ -235,7 +188,7 @@ void setup() {
   setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
   setupBluetooth();
   pid.SetMode(AUTOMATIC);
-  pid.SetOutputLimits(-60, 60);
+  pid.SetOutputLimits(-speedLimit, speedLimit);
   Serial.println("setup done");
 }
 
@@ -256,15 +209,12 @@ void processMPUData() {
     // inputAngle = ypr[2];
     inputAngle = ypr[2] * 180 / M_PI;
     pid.Compute();
-    // double speed = constrain(pidOutput, -100.0, 100.0);
-    speed = pidOutput;
-    if (speed < 0) {
-      speed = speed - 10;
-    } else {
-      speed = speed + 10;
-    }
-    if (enginesOn) {
-      motorsGo(speed);
+    double pidSpeed = constrain(pidOutput, -speedLimit, speedLimit);
+    if (enginesOn && RemoteXY.pidOn) {
+      motorsGo(pidSpeed);
+      speed = pidSpeed;
+      RemoteXY.manualSpeed1 = map(speed, -100, 100, 0, 100);
+      RemoteXY.manualSpeed2 = map(speed, -100, 100, 0, 100);
     }
     unsigned long now = millis();
     if (now - lastOutput > 250) {
@@ -281,18 +231,44 @@ void processMPUData() {
 
 
 void loop() {
-  unsigned long loopStart = millis();
+  // unsigned long loopStart = millis();
   ArduinoOTA.handle();
   RemoteXY_Handler();
-  if (RemoteXY.butttonStop) {
-    enginesOn = !enginesOn;
-  }
+  enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
 
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
-  RemoteXY.angle = inputAngle;
-  RemoteXY.graph_var1 = speed;
+
+  if (RemoteXY.motorLimit != speedLimit) {
+    speedLimit = RemoteXY.motorLimit;
+    RemoteXY.motorLimitEdit = speedLimit;
+    pid.SetOutputLimits(-speedLimit, speedLimit);
+  }
+  
+  if (!RemoteXY.pidOn) {
+      if (RemoteXY.joystickA_y == 0) {
+        speed = map(RemoteXY.manualSpeed1, 0, 100, -100, 100);  
+      } else {
+        speed = RemoteXY.joystickA_y;
+      }
+      
+      speed = constrain(speed, -speedLimit, speedLimit);
+      if (enginesOn) {
+        motorsGo(speed);
+      }
+  }
+  if (!enginesOn) {
+    motorsStop();
+  }
+  processMPUData();
+
+  RemoteXY.angle = map(inputAngle, -90, 90, 0, 100);
+  RemoteXY.graph_var1 = inputAngle;
   RemoteXY.graph_var2 = pidOutput;
+  RemoteXY.graph_var3 = speed;
+  RemoteXY.speed = map(speed, -100, 100, 0, 100);
+  RemoteXY.manualSpeed1 = RemoteXY.speed;
+  RemoteXY.manualSpeed2 = RemoteXY.speed;
   
   // Dabble.processInput();
   // if (Dabble.isAppConnected()) {
@@ -313,20 +289,15 @@ void loop() {
   //   }
   // }
 
-  processMPUData();
-  if (!enginesOn) {
-    motorsStop();
-  }
-    
-  loopSum += millis() - loopStart;
-  loopCount++;
-  if (loopSum >= 1000) {
-    unsigned long average = loopSum / loopCount;
-    Serial.print("Loops "); Serial.print(loopCount); Serial.print(" in "); Serial.println(loopSum);
-    Serial.print("Average loop duration: "); 
-    Serial.println(average);
-    loopSum = 0;
-    loopCount = 0;
-  }
+  // loopSum += millis() - loopStart;
+  // loopCount++;
+  // if (loopSum >= 1000) {
+  //   unsigned long average = loopSum / loopCount;
+  //   Serial.print("Loops "); Serial.print(loopCount); Serial.print(" in "); Serial.println(loopSum);
+  //   Serial.print("Average loop duration: "); 
+  //   Serial.println(average);
+  //   loopSum = 0;
+  //   loopCount = 0;
+  // }
 }
 
