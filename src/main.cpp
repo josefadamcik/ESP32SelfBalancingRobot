@@ -36,10 +36,15 @@ void IRAM_ATTR dmpDataReady() {
   mpuInterrupt = true;
 }
 
-#define MOTOR_A1 32
-#define MOTOR_A2 33
-#define MOTOR_B1 26
-#define MOTOR_B2 25
+#define MOTOR_A1 GPIO_NUM_33
+#define MOTOR_A2 GPIO_NUM_32
+#define MOTOR_B1 GPIO_NUM_25
+#define MOTOR_B2 GPIO_NUM_26
+#define MOTORA_S1 GPIO_NUM_5
+#define MOTORA_S2 GPIO_NUM_17
+#define MOTORB_S1 GPIO_NUM_4
+#define MOTORB_S2 GPIO_NUM_16
+
 
 double targetAngle = 0;
 double inputAngle;
@@ -52,9 +57,9 @@ double pidKp=initialPidKp, pidKi=initialPidKi, pidKd=initialPikKd;
 PID pid(&inputAngle, &pidOutput, &targetAngle, pidKp, pidKi, pidKd, DIRECT);
 
 
-int16_t rPidKpEdit;  // 32767.. +32767 
-int16_t rPidKiEdit;  // 32767.. +32767 
-int16_t rPidKdEdit;  // 32767.. +32767 
+float rPidKpEdit;  // 32767.. +32767 
+float rPidKiEdit;  // 32767.. +32767 
+float rPidKdEdit;  // 32767.. +32767 
 int8_t rPidKp; // =0..100 slider position 
 int8_t rPidKi; // =0..100 slider position 
 int8_t rPidKd; // =0..100 slider position 
@@ -186,7 +191,11 @@ void setup() {
   setupWifi();
   setupOTA();
   // waitForOTA();
-  setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
+  pinMode(MOTORA_S1, INPUT);
+  pinMode(MOTORA_S2, INPUT);
+  pinMode(MOTORB_S1, INPUT);
+  pinMode(MOTORB_S2, INPUT);
+  setupMPWM(MOTOR_A1, MOTOR_A2, MOTORA_S1, MOTORA_S2, MOTOR_B1, MOTOR_B2, MOTORB_S1, MOTORB_S2);
   setupBluetooth();
   pid.SetMode(AUTOMATIC);
   pid.SetOutputLimits(-speedLimit, speedLimit);
@@ -210,7 +219,8 @@ void processMPUData() {
     // inputAngle = ypr[2];
     inputAngle = ypr[2] * 180 / M_PI;
     pid.Compute();
-    double pidSpeed = constrain(pidOutput, -speedLimit, speedLimit);
+    // double pidSpeed = constrain(pidOutput, -speedLimit, speedLimit);
+    double pidSpeed = pidOutput;
     if (enginesOn && RemoteXY.pidOn) {
       motorsGo(pidSpeed);
       speed = pidSpeed;
@@ -224,22 +234,50 @@ void processMPUData() {
       Serial.print(pidOutput);
       Serial.print(" speed ");
       Serial.println(speed);
+      Serial.print("measured: A:");
+      Serial.print(getSpeedA1());
+      Serial.print(",");
+      Serial.print(getSpeedA2());
+      Serial.print(" B: ");
+      Serial.print(getSpeedB1());
+      Serial.print(",");
+      Serial.println(getSpeedB2());
+      sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
   }
 }
 
-
+boolean calibrateOnNextLoop = false;
+//           X Accel  Y Accel  Z Accel   X Gyro   Y Gyro   Z Gyro
+//OFFSETS    -3452,    -784,    1664,     145,      19,       3
+//           X Accel  Y Accel  Z Accel   X Gyro   Y Gyro   Z Gyro
+//OFFSETS    -3450,    -784,    1664,     145,      19,       2
 void loop() {
   // unsigned long loopStart = millis();
   ArduinoOTA.handle();
   RemoteXY_Handler();
   enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
 
-  if (RemoteXY.buttonCalibrate) {
+  if (calibrateOnNextLoop) {
       mpu.CalibrateAccel(6);
       mpu.CalibrateGyro(6);
       mpu.PrintActiveOffsets();
+      calibrateOnNextLoop = false;
   }
+
+  if (RemoteXY.buttonCalibrate) {
+      calibrateOnNextLoop = true;
+  }
+
+  //check PID config
+  if (RemoteXY.pidKdEdit != rPidKdEdit 
+    || RemoteXY.pidKpEdit != rPidKpEdit
+    || RemoteXY.pidKiEdit != rPidKiEdit) {
+      rPidKpEdit = RemoteXY.pidKpEdit;
+      rPidKiEdit = RemoteXY.pidKiEdit;
+      rPidKdEdit = RemoteXY.pidKdEdit;
+      pid.SetTunings(rPidKpEdit, rPidKiEdit, rPidKdEdit);
+    }
 
   if (RemoteXY.motorLimit != speedLimit) {
     speedLimit = RemoteXY.motorLimit;
@@ -266,7 +304,11 @@ void loop() {
   RemoteXY.graph_var2 = pidOutput;
   RemoteXY.graph_var3 = speed;
   RemoteXY.speed = map(speed, -100, 100, 0, 100);
-  if (abs(inputAngle) < 2) {
+  if (calibrateOnNextLoop) {
+    RemoteXY.ledBallance_r = 0;
+    RemoteXY.ledBallance_g = 0;
+    RemoteXY.ledBallance_b = 255;
+  } else if (abs(inputAngle) < 2) {
     RemoteXY.ledBallance_r = 0;
     RemoteXY.ledBallance_g = 255;
     RemoteXY.ledBallance_b = 0;
@@ -279,26 +321,6 @@ void loop() {
     RemoteXY.ledBallance_g = 0;
     RemoteXY.ledBallance_b = 0;
   }
-
-  
-  // Dabble.processInput();
-  // if (Dabble.isAppConnected()) {
-  //   uint16_t pot1Value = Inputs.getPot1Value();
-  //   uint16_t pot2Value = Inputs.getPot2Value();
-  //   onOff = Inputs.getSlideSwitch1Value();
-  //   if (pot1Value != lastPot1Value) {
-  //     lastPot1Value = pot1Value;
-  //     pidKp = pot1Value / 100.0;
-  //     Serial.print("Changing KP: "); Serial.println(pidKp); 
-  //     pid.SetTunings(pidKp, pidKi, pidKd);
-  //   }
-  //   if (pot2Value != lastPot2Value) {
-  //     lastPot2Value = pot2Value;
-  //     pidKi = pot2Value / 100.0;
-  //     Serial.print("Changing KI: "); Serial.println(pidKi); 
-  //     pid.SetTunings(pidKp, pidKi, pidKd);
-  //   }
-  // }
 
   // loopSum += millis() - loopStart;
   // loopCount++;
