@@ -1,4 +1,8 @@
 #include "imu.h"
+#include "I2Cdev.h"
+#include "MPU6050_6Axis_MotionApps_V6_12.h"
+#include "Arduino.h"
+#include "Preferences.h"
 
 // MPU control/status vars
 uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
@@ -11,11 +15,11 @@ uint8_t fifoBuffer[64]; // FIFO storage buffer
 Quaternion q;           // [w, x, y, z]         quaternion container
 VectorFloat gravity;    // [x, y, z]            gravity vector
 
-boolean isMPUReady() {
+bool isMPUReady() {
     return dmpReady;
 }
-boolean getYPR(float *data) {
-    
+bool getYPR(float *data) {
+
     if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
         mpu.dmpGetQuaternion(&q, fifoBuffer);
         mpu.dmpGetGravity(&gravity, &q);

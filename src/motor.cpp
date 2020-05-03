@@ -1,14 +1,10 @@
 #include "motor.h"
 
-
-#define CAP0_INT_EN BIT(27)  //Capture 0 interrupt bit
-#define CAP1_INT_EN BIT(28)  //Capture 1 interrupt bit
-#define CAP2_INT_EN BIT(29)  //Capture 2 interrupt bit
-
 #define WHEEL_RADIUS_MM 40.0
 #define SPEED_MEASUREMENT_PERIOD_MS 50
 #define PULSE_PER_REVOLUTION 1800.0
 #define USE_FAST_DECAY
+#define PWM_FREQ 1000
 
 const mcpwm_operator_t OPERATOR_FORWARD = MCPWM_OPR_A;
 const mcpwm_operator_t OPERATOR_BACKWARD = MCPWM_OPR_B;
@@ -98,6 +94,10 @@ void setupPulseCounter(gpio_num_t pin, pcnt_unit_t unit, pcnt_channel_t channel)
     pcnt_unit_config(&pcnt_config);
 }
 void setupPulseCounters(gpio_num_t sensA1, gpio_num_t sensA2, gpio_num_t sensB1, gpio_num_t sensB2) {
+  pinMode(sensA1, INPUT);
+  pinMode(sensA2, INPUT);
+  pinMode(sensB1, INPUT);
+  pinMode(sensB2, INPUT);
   setupPulseCounter(sensA1, PCNT_UNIT_0, PCNT_CHANNEL_0);
   setupPulseCounter(sensA2, PCNT_UNIT_0, PCNT_CHANNEL_1);
   setupPulseCounter(sensB1, PCNT_UNIT_1, PCNT_CHANNEL_0);
@@ -112,14 +112,15 @@ void setupPulseCounters(gpio_num_t sensA1, gpio_num_t sensA2, gpio_num_t sensB1,
 
 
 void setupMPWM(gpio_num_t pinA1, gpio_num_t pinA2, gpio_num_t pinB1, gpio_num_t pinB2) {
-  //documentation https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-rerence/peripherals/mcpwm.html
+  //documentation 
+  // https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/mcpwm.html
   mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, pinA1);
   mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, pinA2);
   mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0A, pinB1);
   mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0B, pinB2);
 
   mcpwm_config_t pwm_config;
-  pwm_config.frequency =10000;    //frequency,
+  pwm_config.frequency = PWM_FREQ;    //frequency,
   pwm_config.cmpr_a = 0;    		//duty cycle of PWMxA = 0
   pwm_config.cmpr_b = 0;    		//duty cycle of PWMxb = 0
   pwm_config.counter_mode = MCPWM_UP_COUNTER;
@@ -131,11 +132,8 @@ void setupMPWM(gpio_num_t pinA1, gpio_num_t pinA2, gpio_num_t pinB1, gpio_num_t 
 }
 
 void motorDirectionStop(mcpwm_unit_t unit, mcpwm_operator_t mcpwmOperator) {
-  #if defined(USE_FAST_DECAY)
-    mcpwm_set_signal_low(unit, MCPWM_TIMER_0, mcpwmOperator);
-  #else 
-    mcpwm_set_signal_hiph(unit, MCPWM_TIMER_0, mcpwmOperator);
-  #endif
+  mcpwm_set_duty(unit, MCPWM_TIMER_0, mcpwmOperator, 0.0);
+  mcpwm_set_signal_low(unit, MCPWM_TIMER_0, mcpwmOperator);
 }
 
 void motorDirectionGo(mcpwm_unit_t unit, mcpwm_operator_t mcpwmOperator, float speed) {
@@ -187,4 +185,87 @@ void motorsStop() {
   motorDirectionStop(MCPWM_UNIT_1, OPERATOR_BACKWARD);
 }
 
+void motorTest(int8_t speedLimit) {
+  Serial.println("One motor test: A");
+  for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+   for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+}
 
+void motorsTest(int8_t speedLimit) {
+  Serial.println("Two motor test");
+  for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+   for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+}
+
+void motorPrintDebug() {
+  Serial.println("motor debug info");
+  Serial.print("U0/FWD: ");
+  Serial.print(mcpwm_get_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, OPERATOR_FORWARD));
+  Serial.print(" U0/BKWD: ");
+  Serial.print(mcpwm_get_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, OPERATOR_BACKWARD));
+  Serial.print(" U1/FWD: ");
+  Serial.print(mcpwm_get_duty(MCPWM_UNIT_1, MCPWM_TIMER_0, OPERATOR_FORWARD));
+  Serial.print(" U1/BKWD: ");
+  Serial.print(mcpwm_get_duty(MCPWM_UNIT_1, MCPWM_TIMER_0, OPERATOR_BACKWARD));
+  Serial.println();
+}

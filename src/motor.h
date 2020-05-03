@@ -20,5 +20,8 @@ void computeSpeedInfo();
 double getSpeedA();
 double getSpeedB();
 void printSpeedInfoToSerial();
+void motorTest(int8_t speedLimit);
+void motorsTest(int8_t speedLimit);
+void motorPrintDebug();
 
 #endif

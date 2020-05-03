@@ -1,7 +1,4 @@
-
 #include "Arduino.h"
-#include "I2Cdev.h"
-#include "MPU6050_6Axis_MotionApps_V6_12.h"
 #include "Wire.h"
 #include "ArduinoOTA.h"
 #include "keys.h"
@@ -9,34 +6,20 @@
 #include "motor.h"
 #include "PID_v1.h"
 #include "remote.h"
-  
-MPU6050 mpu; 
+#include "imu.h"
+
+//IMU 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
-// #define DEBUG_PID
-
-// MPU control/status vars
-bool dmpReady = false;  // set true if DMP init was successful
-uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
-uint16_t fifoCount;     // count of all bytes currently in FIFO
-uint8_t fifoBuffer[64]; // FIFO storage buffer
-
-// orientation/motion vars
-Quaternion q;           // [w, x, y, z]         quaternion container
-VectorInt16 aa;         // [x, y, z]            accel sensor measurements
-VectorInt16 gy;         // [x, y, z]            gyro sensor measurements
-VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
-VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
-VectorFloat gravity;    // [x, y, z]            gravity vector
-float euler[3];         // [psi, theta, phi]    Euler angle container
+#define PREFERENCES_NAMESPACE "app"
+#define DEBUG_PID
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
 static volatile bool mpuInterrupt = false;
-void IRAM_ATTR dmpDataReady() {
+static void IRAM_ATTR dmpDataReady() {
   mpuInterrupt = true;
 }
 
+//MOTORS
 #define MOTOR_A1 GPIO_NUM_33
 #define MOTOR_A2 GPIO_NUM_32
 #define MOTOR_B1 GPIO_NUM_25
@@ -46,7 +29,7 @@ void IRAM_ATTR dmpDataReady() {
 #define MOTORB_S1 GPIO_NUM_4
 #define MOTORB_S2 GPIO_NUM_16
 
-
+//PID / SPEED
 double targetAngle = 0;
 double inputAngle;
 double pidOutput;
@@ -57,62 +40,18 @@ double pidKp=initialPidKp, pidKi=initialPidKi, pidKd=initialPikKd;
 //Specify the links and initial tuning parameters
 PID pid(&inputAngle, &pidOutput, &targetAngle, pidKp, pidKi, pidKd, DIRECT);
 
-
 float rPidKpEdit;  // 32767.. +32767 
 float rPidKiEdit;  // 32767.. +32767 
 float rPidKdEdit;  // 32767.. +32767 
 int8_t rPidKp; // =0..100 slider position 
 int8_t rPidKi; // =0..100 slider position 
 int8_t rPidKd; // =0..100 slider position 
-// static unsigned long loopSum = 0;
-// static unsigned int loopCount = 0;
 bool enginesOn = true;
 int8_t speedLimit = 80;
-
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
-
-void setupMPU6050() {  
-  Serial.println(F("Initializing MPU6050"));
-  mpu.initialize();
-  pinMode(MPU_INTERRUPT_PIN, INPUT);
-  Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
-  // load and configure the DMP
-  Serial.println(F("Initializing DMP..."));
-  devStatus = mpu.dmpInitialize();
-  mpu.setXGyroOffset(142);
-  mpu.setYGyroOffset(18);
-  mpu.setZGyroOffset(5);
-  mpu.setXAccelOffset(-3500);
-  mpu.setYAccelOffset(-868);
-  mpu.setZAccelOffset(1660);
-  // make sure it worked (returns 0 if so)
-  if (devStatus == 0) {
-    // Calibration Time: generate offsets and calibrate our MPU6050
-    // mpu.CalibrateAccel(6);
-    // mpu.CalibrateGyro(6);
-    // Serial.println();
-    // mpu.PrintActiveOffsets();
-
-    Serial.println(F("Enabling DMP..."));
-    mpu.setDMPEnabled(true);
-    attachInterrupt(digitalPinToInterrupt(MPU_INTERRUPT_PIN), dmpDataReady, RISING);
-    mpuIntStatus = mpu.getIntStatus();
-    Serial.println(F("DMP ready! Waiting for first interrupt..."));
-    dmpReady = true;
-    packetSize = mpu.dmpGetFIFOPacketSize();
-  } else {
-    // ERROR!
-    // 1 = initial memory load failed
-    // 2 = DMP configuration updates failed
-    // (if it's going to break, usually the code will be 1)
-    Serial.print(F("DMP Initialization failed (code "));
-    Serial.print(devStatus);
-    Serial.println(F(")"));
-  }
-}
 
 void setupWifi() {
   Serial.println("Connecting to wifi");
@@ -127,7 +66,6 @@ void setupWifi() {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 }
-
 
 void setupOTA() {
   ArduinoOTA.setHostname("BalancingBotESP32");
@@ -188,14 +126,10 @@ void setup() {
   Wire.begin();
   Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
   Serial.begin(115200);
-  setupMPU6050();
+  setupMPU6050(MPU_INTERRUPT_PIN, PREFERENCES_NAMESPACE, dmpDataReady);
   // setupWifi();
   // setupOTA();
   // waitForOTA();
-  pinMode(MOTORA_S1, INPUT);
-  pinMode(MOTORA_S2, INPUT);
-  pinMode(MOTORB_S1, INPUT);
-  pinMode(MOTORB_S2, INPUT);
   setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
   setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
   computeSpeedInfo();
@@ -205,19 +139,11 @@ void setup() {
   Serial.println("setup done");
 }
 
-// ================================================================
-// ===                    MAIN PROGRAM LOOP                     ===
-// ================================================================
-
 void processMPUData() {
-  if (!dmpReady || !mpuInterrupt) return;
+  if (!isMPUReady() || !mpuInterrupt) return;
   mpuInterrupt = false;
-  mpuIntStatus = mpu.getIntStatus();
   static unsigned long lastOutput = 0;
-  if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+  if (getYPR(ypr)) { // Get the Latest packet 
     // inputAngle = ypr[2];
     inputAngle = ypr[2] * 180 / M_PI;
     pid.Compute();
@@ -235,6 +161,7 @@ void processMPUData() {
       Serial.print("PID output: "); Serial.print(pidOutput);
       Serial.print(" speed "); Serial.println(speed);
       printSpeedInfoToSerial();
+      motorPrintDebug();
       #endif
 
       sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
@@ -243,85 +170,6 @@ void processMPUData() {
 }
 
 boolean calibrateOnNextLoop = false;
-
-void calibrateMPU() {
-  mpu.CalibrateAccel(6);
-  mpu.CalibrateGyro(6);
-  mpu.PrintActiveOffsets();
-  //TODO: store to eeprom
-}
-
-void motorTest() {
-  Serial.println("One motor test: A");
-  for (int i = 0; i <= speedLimit ; i++) {
-    float duty = i/1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorGo(0, duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-  for (int i = speedLimit; i >=0; i--) {
-    float duty = i/1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorGo(0, duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-   for (int i = 0; i <= speedLimit ; i++) {
-    float duty = i/-1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorGo(0, duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-  for (int i = speedLimit; i >=0; i--) {
-    float duty = i/-1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorGo(0, duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-}
-
-void motorsTest() {
-  Serial.println("Two motor test");
-  for (int i = 0; i <= speedLimit ; i++) {
-    float duty = i/1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-  for (int i = speedLimit; i >=0; i--) {
-    float duty = i/1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-   for (int i = 0; i <= speedLimit ; i++) {
-    float duty = i/-1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-  for (int i = speedLimit; i >=0; i--) {
-    float duty = i/-1.0;
-    Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
-    delay(500);
-    computeSpeedInfo();
-    printSpeedInfoToSerial();
-  }
-}
 
 void loop() {
   ArduinoOTA.handle();
@@ -332,8 +180,9 @@ void loop() {
 
   if (calibrateOnNextLoop) {
     calibrateOnNextLoop = false;
-    // calibrateMPU();
-    motorsTest();
+    calibrateMPU(PREFERENCES_NAMESPACE);
+    // motorTest(speedLimit);
+    // motorsTest(speedLimit);
   } else {
     if (RemoteXY.buttonCalibrate) {
       calibrateOnNextLoop = true;
