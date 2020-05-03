@@ -29,7 +29,8 @@ static void IRAM_ATTR dmpDataReady() {
 #define MOTORB_S1 GPIO_NUM_4
 #define MOTORB_S2 GPIO_NUM_16
 
-double const initialPidKp=3, initialPidKi = 1, initialPikKd = 0.5; 
+double const initialPidKp=3, initialPidKi = 0.8, initialPikKd = 0.2; 
+double const initialTargetAngle = -1;
 
 float rPidKpEdit;  // 32767.. +32767 
 float rPidKiEdit;  // 32767.. +32767 
@@ -37,7 +38,8 @@ float rPidKdEdit;  // 32767.. +32767
 int8_t rPidKp; // =0..100 slider position 
 int8_t rPidKi; // =0..100 slider position 
 int8_t rPidKd; // =0..100 slider position 
-bool enginesOn = true;
+bool enginesOn = false;
+bool pidOn = false;
 int8_t speedLimit = 70;
 
 // ================================================================
@@ -110,6 +112,7 @@ void setupBluetooth() {
   RemoteXY.pidKd = 50;
   RemoteXY.pidKdEdit = initialPikKd;
   RemoteXY.motorLimit = speedLimit;
+  RemoteXY.target = targetAngle;
   sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
 }
 
@@ -131,7 +134,7 @@ void setup() {
 
 
   //PID / SPEED
-double targetAngle = 0;
+double targetAngle = initialTargetAngle;
 double inputAngle;
 double prevError = 0;
 double speed;
@@ -172,7 +175,7 @@ void printPidDebug() {
       Serial.print(" last time: "); Serial.print(lastSampleTime);
       Serial.println();
       printSpeedInfoToSerial();
-      motorPrintDebug();
+      // motorPrintDebug();
       #endif
 
       sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
@@ -202,9 +205,18 @@ void loop() {
   ArduinoOTA.handle();
   computeSpeedInfo();
   processMPUData();
+
+  // read controll data
   RemoteXY_Handler();
-  
   enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
+  bool newPidOn = enginesOn && RemoteXY.pidOn;
+  if (!pidOn && newPidOn) {
+    errorSum = 0;
+    prevError = 0;
+    pidOutput = 0;
+    speed = 0;
+  }
+  pidOn = newPidOn;
 
   if (calibrateOnNextLoop) {
     calibrateOnNextLoop = false;
@@ -227,16 +239,19 @@ void loop() {
       pidKp = rPidKpEdit;
       pidKi = rPidKiEdit;
       pidKd = rPidKdEdit;
-    }
+  }
+  if (RemoteXY.target != targetAngle) {
+    targetAngle = RemoteXY.target;
+  }
 
   if (RemoteXY.motorLimit != speedLimit) {
     speedLimit = RemoteXY.motorLimit;
     sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
   }
   
-  if (!RemoteXY.pidOn) {
+  if (!pidOn) {
       speed = RemoteXY.joystickA_y;
-      speed = constrain(speed, -speedLimit, speedLimit);
+      speed = map(speed, -100, 100, -speedLimit, speedLimit);
       if (enginesOn) {
         motorsGo(speed);
       }
@@ -248,9 +263,9 @@ void loop() {
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
   RemoteXY.angle = map(inputAngle, -90, 90, 0, 100);
-  RemoteXY.graph_var1 = inputAngle;
-  RemoteXY.graph_var2 = pidOutput;
-  RemoteXY.graph_var3 = speed;
+  RemoteXY.graph_var1 = prevError;
+  RemoteXY.graph_var2 = speed;
+  RemoteXY.graph_var3 = pidOutput;
   RemoteXY.speed = map(speed, -100, 100, 0, 100);
   if (calibrateOnNextLoop) {
     RemoteXY.ledBallance_r = 0;
@@ -269,16 +284,5 @@ void loop() {
     RemoteXY.ledBallance_g = 0;
     RemoteXY.ledBallance_b = 0;
   }
-
-  // loopSum += millis() - loopStart;
-  // loopCount++;
-  // if (loopSum >= 1000) {
-  //   unsigned long average = loopSum / loopCount;
-  //   Serial.print("Loops "); Serial.print(loopCount); Serial.print(" in "); Serial.println(loopSum);
-  //   Serial.print("Average loop duration: "); 
-  //   Serial.println(average);
-  //   loopSum = 0;
-  //   loopCount = 0;
-  // }
 }
 

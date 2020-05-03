@@ -14,7 +14,7 @@
 // RemoteXY configurate  
 #pragma pack(push, 1)
 uint8_t RemoteXY_CONF[] =
-  { 255,21,0,52,0,71,1,10,13,4,
+  { 255,25,0,52,0,97,1,10,13,4,
   131,1,1,1,22,7,1,2,31,67,
   111,110,116,114,111,108,108,0,131,0,
   26,1,20,7,2,2,31,83,116,97,
@@ -47,7 +47,9 @@ uint8_t RemoteXY_CONF[] =
   3,2,26,11,65,7,87,38,9,9,
   1,1,0,85,13,12,12,1,2,31,
   67,65,76,0,67,4,45,16,38,5,
-  1,2,26,21 };
+  1,2,26,21,7,44,74,38,20,5,
+  3,2,26,2,2,129,0,3,39,8,
+  3,3,17,116,97,114,103,101,116,0 };
   
 // this structure defines all the variables and events of your control interface 
 struct {
@@ -65,6 +67,7 @@ struct {
   int8_t joystickA_x; // =-100..100 x-coordinate joystick position 
   int8_t joystickA_y; // =-100..100 y-coordinate joystick position 
   uint8_t buttonCalibrate; // =1 if button pressed, else =0 
+  float target;
 
     // output variables
   float graph_var1;
