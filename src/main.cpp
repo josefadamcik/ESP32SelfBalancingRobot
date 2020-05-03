@@ -12,6 +12,7 @@
   
 MPU6050 mpu; 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
+// #define DEBUG_PID
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -229,10 +230,12 @@ void processMPUData() {
     unsigned long now = millis();
     if (now - lastOutput > 250) {
       lastOutput = now;
+      #if defined(DEBUG_PID) 
       Serial.print("An: "); Serial.println(inputAngle);
       Serial.print("PID output: "); Serial.print(pidOutput);
       Serial.print(" speed "); Serial.println(speed);
       printSpeedInfoToSerial();
+      #endif
 
       sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
@@ -240,6 +243,85 @@ void processMPUData() {
 }
 
 boolean calibrateOnNextLoop = false;
+
+void calibrateMPU() {
+  mpu.CalibrateAccel(6);
+  mpu.CalibrateGyro(6);
+  mpu.PrintActiveOffsets();
+  //TODO: store to eeprom
+}
+
+void motorTest() {
+  Serial.println("One motor test: A");
+  for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+   for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorGo(0, duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+}
+
+void motorsTest() {
+  Serial.println("Two motor test");
+  for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+   for (int i = 0; i <= speedLimit ; i++) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+  for (int i = speedLimit; i >=0; i--) {
+    float duty = i/-1.0;
+    Serial.println("Duty cycle:  "); Serial.println(duty);
+    motorsGo(duty);
+    delay(500);
+    computeSpeedInfo();
+    printSpeedInfoToSerial();
+  }
+}
 
 void loop() {
   ArduinoOTA.handle();
@@ -249,14 +331,13 @@ void loop() {
   enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
 
   if (calibrateOnNextLoop) {
-      mpu.CalibrateAccel(6);
-      mpu.CalibrateGyro(6);
-      mpu.PrintActiveOffsets();
-      calibrateOnNextLoop = false;
-  }
-
-  if (RemoteXY.buttonCalibrate) {
+    calibrateOnNextLoop = false;
+    // calibrateMPU();
+    motorsTest();
+  } else {
+    if (RemoteXY.buttonCalibrate) {
       calibrateOnNextLoop = true;
+    }
   }
 
   //check PID config

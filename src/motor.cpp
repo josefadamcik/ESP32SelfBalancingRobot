@@ -157,6 +157,21 @@ void motorsReverse(float speed) {
   motorDirectionGo(MCPWM_UNIT_1, OPERATOR_BACKWARD, speed);
 }
 
+void motorGo(uint8_t motor, float speed) {
+  mcpwm_unit_t selectedUnit = MCPWM_UNIT_0;
+  if (motor == 1) {
+    selectedUnit = MCPWM_UNIT_1;
+  }
+  if (speed < 0) {
+    speed = speed * -1.0;
+    motorDirectionStop(selectedUnit, OPERATOR_FORWARD);
+    motorDirectionGo(selectedUnit, OPERATOR_BACKWARD, speed);
+  } else {
+    motorDirectionStop(selectedUnit, OPERATOR_BACKWARD);
+    motorDirectionGo(selectedUnit, OPERATOR_FORWARD, speed);
+  }
+}
+
 void motorsGo(float speed) {
   if (speed < 0) {
     motorsReverse(speed * -1.0);
