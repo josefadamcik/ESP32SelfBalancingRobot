@@ -68,6 +68,8 @@ int8_t rPidKd; // =0..100 slider position
 bool enginesOn = true;
 int8_t speedLimit = 50;
 
+static uint32_t lastSpeedMeasurement = 0;
+
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -188,14 +190,15 @@ void setup() {
   Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
   Serial.begin(115200);
   setupMPU6050();
-  setupWifi();
-  setupOTA();
+  // setupWifi();
+  // setupOTA();
   // waitForOTA();
   pinMode(MOTORA_S1, INPUT);
   pinMode(MOTORA_S2, INPUT);
   pinMode(MOTORB_S1, INPUT);
   pinMode(MOTORB_S2, INPUT);
   setupMPWM(MOTOR_A1, MOTOR_A2, MOTORA_S1, MOTORA_S2, MOTOR_B1, MOTOR_B2, MOTORB_S1, MOTORB_S2);
+  lastSpeedMeasurement = millis();
   setupBluetooth();
   pid.SetMode(AUTOMATIC);
   pid.SetOutputLimits(-speedLimit, speedLimit);
@@ -205,7 +208,6 @@ void setup() {
 // ================================================================
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
-
 
 void processMPUData() {
   if (!dmpReady || !mpuInterrupt) return;
@@ -234,14 +236,37 @@ void processMPUData() {
       Serial.print(pidOutput);
       Serial.print(" speed ");
       Serial.println(speed);
+      
+      uint32_t now = millis();
+      uint32_t countsA = getSpeedA();
+      uint32_t countsB = getSpeedB();
+      double timeCoef = 1000.0 / (now - lastSpeedMeasurement); //per sec
+      double rpsA = countsA * timeCoef / 1800; // rounds per second -> looks ok according to measurements
+      double angularVelocityA = M_TWOPI * rpsA; //rad per sec
+      double speedA = angularVelocityA * 40; // mm per sec; 40mm is radius of the wheel
+      double rpsB = countsB * timeCoef / 1800;
+      double angularVelocityB = M_TWOPI * rpsB;
+      double speedB = angularVelocityB * 40; // mm per sec; 40mm is radius of the wheel
+      
+      lastSpeedMeasurement = millis();
+      
       Serial.print("measured: A:");
-      Serial.print(getSpeedA1());
-      Serial.print(",");
-      Serial.print(getSpeedA2());
-      Serial.print(" B: ");
-      Serial.print(getSpeedB1());
-      Serial.print(",");
-      Serial.println(getSpeedB2());
+      Serial.print(countsA);
+      Serial.print(" RPS ");
+      Serial.print(rpsA);
+      Serial.print(" angVel ");
+      Serial.print(angularVelocityA);
+      Serial.print(" speed: ");
+      Serial.println(speedA);
+      Serial.print("B:");
+      Serial.print(countsB);
+      Serial.print(" RPS: ");
+      Serial.print(rpsB);
+      Serial.print(" angVel ");
+      Serial.print(angularVelocityB);
+      Serial.print(" speed: ");
+      Serial.println(speedB);
+      
       sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
   }
