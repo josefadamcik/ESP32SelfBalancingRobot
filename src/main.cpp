@@ -66,9 +66,7 @@ int8_t rPidKd; // =0..100 slider position
 // static unsigned long loopSum = 0;
 // static unsigned int loopCount = 0;
 bool enginesOn = true;
-int8_t speedLimit = 50;
-
-static uint32_t lastSpeedMeasurement = 0;
+int8_t speedLimit = 80;
 
 
 // ================================================================
@@ -197,8 +195,9 @@ void setup() {
   pinMode(MOTORA_S2, INPUT);
   pinMode(MOTORB_S1, INPUT);
   pinMode(MOTORB_S2, INPUT);
-  setupMPWM(MOTOR_A1, MOTOR_A2, MOTORA_S1, MOTORA_S2, MOTOR_B1, MOTOR_B2, MOTORB_S1, MOTORB_S2);
-  lastSpeedMeasurement = millis();
+  setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
+  setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
+  computeSpeedInfo();
   setupBluetooth();
   pid.SetMode(AUTOMATIC);
   pid.SetOutputLimits(-speedLimit, speedLimit);
@@ -230,57 +229,23 @@ void processMPUData() {
     unsigned long now = millis();
     if (now - lastOutput > 250) {
       lastOutput = now;
-      Serial.print("An: ");
-      Serial.println(inputAngle);
-      Serial.print("PID output: ");
-      Serial.print(pidOutput);
-      Serial.print(" speed ");
-      Serial.println(speed);
-      
-      uint32_t now = millis();
-      uint32_t countsA = getSpeedA();
-      uint32_t countsB = getSpeedB();
-      double timeCoef = 1000.0 / (now - lastSpeedMeasurement); //per sec
-      double rpsA = countsA * timeCoef / 1800; // rounds per second -> looks ok according to measurements
-      double angularVelocityA = M_TWOPI * rpsA; //rad per sec
-      double speedA = angularVelocityA * 40; // mm per sec; 40mm is radius of the wheel
-      double rpsB = countsB * timeCoef / 1800;
-      double angularVelocityB = M_TWOPI * rpsB;
-      double speedB = angularVelocityB * 40; // mm per sec; 40mm is radius of the wheel
-      
-      lastSpeedMeasurement = millis();
-      
-      Serial.print("measured: A:");
-      Serial.print(countsA);
-      Serial.print(" RPS ");
-      Serial.print(rpsA);
-      Serial.print(" angVel ");
-      Serial.print(angularVelocityA);
-      Serial.print(" speed: ");
-      Serial.println(speedA);
-      Serial.print("B:");
-      Serial.print(countsB);
-      Serial.print(" RPS: ");
-      Serial.print(rpsB);
-      Serial.print(" angVel ");
-      Serial.print(angularVelocityB);
-      Serial.print(" speed: ");
-      Serial.println(speedB);
-      
+      Serial.print("An: "); Serial.println(inputAngle);
+      Serial.print("PID output: "); Serial.print(pidOutput);
+      Serial.print(" speed "); Serial.println(speed);
+      printSpeedInfoToSerial();
+
       sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
   }
 }
 
 boolean calibrateOnNextLoop = false;
-//           X Accel  Y Accel  Z Accel   X Gyro   Y Gyro   Z Gyro
-//OFFSETS    -3452,    -784,    1664,     145,      19,       3
-//           X Accel  Y Accel  Z Accel   X Gyro   Y Gyro   Z Gyro
-//OFFSETS    -3450,    -784,    1664,     145,      19,       2
+
 void loop() {
-  // unsigned long loopStart = millis();
   ArduinoOTA.handle();
+  computeSpeedInfo();
   RemoteXY_Handler();
+  
   enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
 
   if (calibrateOnNextLoop) {
