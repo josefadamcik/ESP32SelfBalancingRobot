@@ -4,9 +4,9 @@
 #include "keys.h"
 #include "math.h"
 #include "motor.h"
-#include "PID_v1.h"
 #include "remote.h"
 #include "imu.h"
+#include "pid.h"
 
 //IMU 
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
@@ -29,16 +29,7 @@ static void IRAM_ATTR dmpDataReady() {
 #define MOTORB_S1 GPIO_NUM_4
 #define MOTORB_S2 GPIO_NUM_16
 
-//PID / SPEED
-double targetAngle = 0;
-double inputAngle;
-double pidOutput;
-double speed;
-double const initialPidKp=1, initialPidKi = 0, initialPikKd = 0; 
-double pidKp=initialPidKp, pidKi=initialPidKi, pidKd=initialPikKd;
-
-//Specify the links and initial tuning parameters
-PID pid(&inputAngle, &pidOutput, &targetAngle, pidKp, pidKi, pidKd, DIRECT);
+double const initialPidKp=3, initialPidKi = 1, initialPikKd = 0.5; 
 
 float rPidKpEdit;  // 32767.. +32767 
 float rPidKiEdit;  // 32767.. +32767 
@@ -47,7 +38,7 @@ int8_t rPidKp; // =0..100 slider position
 int8_t rPidKi; // =0..100 slider position 
 int8_t rPidKd; // =0..100 slider position 
 bool enginesOn = true;
-int8_t speedLimit = 80;
+int8_t speedLimit = 70;
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -113,11 +104,11 @@ void setupBluetooth() {
   Serial.println("Setub bluettooth");
   RemoteXY_Init();
   RemoteXY.pidKp = 50;
-  RemoteXY.pidKpEdit = pidKp;
+  RemoteXY.pidKpEdit = initialPidKp;
   RemoteXY.pidKi = 50;
-  RemoteXY.pidKiEdit = pidKi;
+  RemoteXY.pidKiEdit = initialPidKi;
   RemoteXY.pidKd = 50;
-  RemoteXY.pidKdEdit = pidKd;
+  RemoteXY.pidKdEdit = initialPikKd;
   RemoteXY.motorLimit = speedLimit;
   sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
 }
@@ -134,46 +125,83 @@ void setup() {
   setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
   computeSpeedInfo();
   setupBluetooth();
-  pid.SetMode(AUTOMATIC);
-  pid.SetOutputLimits(-speedLimit, speedLimit);
   Serial.println("setup done");
 }
 
-void processMPUData() {
-  if (!isMPUReady() || !mpuInterrupt) return;
-  mpuInterrupt = false;
-  static unsigned long lastOutput = 0;
-  if (getYPR(ypr)) { // Get the Latest packet 
-    // inputAngle = ypr[2];
-    inputAngle = ypr[2] * 180 / M_PI;
-    pid.Compute();
-    // double pidSpeed = constrain(pidOutput, -speedLimit, speedLimit);
-    double pidSpeed = pidOutput;
-    if (enginesOn && RemoteXY.pidOn) {
-      motorsGo(pidSpeed);
-      speed = pidSpeed;
-    }
+
+
+  //PID / SPEED
+double targetAngle = 0;
+double inputAngle;
+double prevError = 0;
+double speed;
+
+static double pidKp=initialPidKp, pidKi=initialPidKi, pidKd=initialPikKd;
+
+static double errorSum = 0;
+static double pidOutput = 0;
+static uint32_t lastPidSample = 0;
+static double lastSampleTime;
+
+void executePid() {
+  uint32_t time = millis();
+  double error = targetAngle - inputAngle;
+  double sampleTime = (time - lastPidSample) / 1000.0; //let's sey it's in sec
+  errorSum = errorSum + error;
+  errorSum = constrain(errorSum, -300, 300);
+  //pidOutput = pidKp*(error) + pidKi*(errorSum)*sampleTime - pidKd*(inputAngle-prevAngle)/sampleTime;
+  pidOutput = pidKp*error +  pidKi*errorSum*sampleTime + pidKd*(error-prevError)/sampleTime;
+
+  prevError = error;
+  lastPidSample = millis();
+  lastSampleTime = sampleTime;
+}
+
+void printPidDebug() {
+    static unsigned long lastOutput = 0;
     unsigned long now = millis();
     if (now - lastOutput > 250) {
       lastOutput = now;
       #if defined(DEBUG_PID) 
-      Serial.print("An: "); Serial.println(inputAngle);
+      Serial.print("PID: "); Serial.print(pidKp); Serial.print(",");Serial.print(pidKi); Serial.print(",");Serial.print(pidKd); Serial.print("; ");
+      Serial.print("Angle: "); Serial.println(inputAngle);
       Serial.print("PID output: "); Serial.print(pidOutput);
-      Serial.print(" speed "); Serial.println(speed);
+      Serial.print(" speed "); Serial.print(speed);
+      Serial.print(" prev error: "); Serial.print(prevError);
+      Serial.print(" error sum: "); Serial.print(errorSum);
+      Serial.print(" last time: "); Serial.print(lastSampleTime);
+      Serial.println();
       printSpeedInfoToSerial();
       motorPrintDebug();
       #endif
 
       sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
+}
+
+void processMPUData() {
+  if (!isMPUReady() || !mpuInterrupt) return;
+  mpuInterrupt = false;
+
+  if (getYPR(ypr)) { 
+    inputAngle = ypr[2] * 180 / M_PI;
+    executePid();
+    double pidSpeed = constrain(pidOutput, -speedLimit, speedLimit);
+    if (enginesOn && RemoteXY.pidOn) {
+      if (abs(speed - pidSpeed) >= 0.1) {
+        motorsGo(pidSpeed);
+        speed = pidSpeed;
+      }
+    }
+    printPidDebug();
   }
 }
 
-boolean calibrateOnNextLoop = false;
-
 void loop() {
+  static boolean calibrateOnNextLoop = false;
   ArduinoOTA.handle();
   computeSpeedInfo();
+  processMPUData();
   RemoteXY_Handler();
   
   enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
@@ -196,13 +224,14 @@ void loop() {
       rPidKpEdit = RemoteXY.pidKpEdit;
       rPidKiEdit = RemoteXY.pidKiEdit;
       rPidKdEdit = RemoteXY.pidKdEdit;
-      pid.SetTunings(rPidKpEdit, rPidKiEdit, rPidKdEdit);
+      pidKp = rPidKpEdit;
+      pidKi = rPidKiEdit;
+      pidKd = rPidKdEdit;
     }
 
   if (RemoteXY.motorLimit != speedLimit) {
     speedLimit = RemoteXY.motorLimit;
     sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
-    pid.SetOutputLimits(-speedLimit, speedLimit);
   }
   
   if (!RemoteXY.pidOn) {
@@ -215,7 +244,6 @@ void loop() {
   if (!enginesOn) {
     motorsStop();
   }
-  processMPUData();
 
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;

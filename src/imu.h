@@ -1,5 +1,5 @@
-#ifndef IMUHEADER_H
-#define IMUHEADER_H
+#ifndef IMU_H
+#define IMU_H
 
 #include "FunctionalInterrupt.h"
 
