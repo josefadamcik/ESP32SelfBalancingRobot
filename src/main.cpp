@@ -20,17 +20,17 @@ static void IRAM_ATTR dmpDataReady() {
 }
 
 //MOTORS
-#define MOTOR_A1 GPIO_NUM_33
-#define MOTOR_A2 GPIO_NUM_32
-#define MOTOR_B1 GPIO_NUM_25
-#define MOTOR_B2 GPIO_NUM_26
+#define MOTOR_A1 GPIO_NUM_32
+#define MOTOR_A2 GPIO_NUM_33
+#define MOTOR_B1 GPIO_NUM_26
+#define MOTOR_B2 GPIO_NUM_25
 #define MOTORA_S1 GPIO_NUM_5
 #define MOTORA_S2 GPIO_NUM_17
 #define MOTORB_S1 GPIO_NUM_4
 #define MOTORB_S2 GPIO_NUM_16
 
-double const initialPidKp=3, initialPidKi = 0.8, initialPikKd = 0.2; 
-double const initialTargetAngle = -1;
+double const initialPidKp=4, initialPidKi = 0, initialPikKd = 0; 
+double const initialTargetAngle = 0;
 
 float rPidKpEdit;  // 32767.. +32767 
 float rPidKiEdit;  // 32767.. +32767 
@@ -121,7 +121,7 @@ void setup() {
   Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
   Serial.begin(115200);
 
-  // setupMPU6050(MPU_INTERRUPT_PIN, PREFERENCES_NAMESPACE, dmpDataReady);
+  setupMPU6050(MPU_INTERRUPT_PIN, PREFERENCES_NAMESPACE, dmpDataReady);
   // setupWifi();
   // setupOTA();
   // waitForOTA();
@@ -132,9 +132,7 @@ void setup() {
   Serial.println("setup done");
 }
 
-
-
-  //PID / SPEED
+//PID / SPEED
 double targetAngle = initialTargetAngle;
 double inputAngle;
 double prevError = 0;
@@ -167,19 +165,23 @@ void printPidDebug() {
     if (now - lastOutput > 250) {
       lastOutput = now;
       #if defined(DEBUG_PID) 
-      // Serial.print("PID: "); Serial.print(pidKp); Serial.print(",");Serial.print(pidKi); Serial.print(",");Serial.print(pidKd); Serial.print("; ");
-      // Serial.print("Angle: "); Serial.println(inputAngle);
-      // Serial.print("PID output: "); Serial.print(pidOutput);
+      Serial.print("PID: "); Serial.print(pidKp); Serial.print(",");Serial.print(pidKi); Serial.print(",");Serial.print(pidKd); Serial.print("; ");
+      Serial.print("Angle: "); Serial.println(inputAngle);
+      Serial.print("Target Ang.: "); Serial.println(targetAngle);
+      Serial.print("PID output: "); Serial.print(pidOutput);
       Serial.print(" speed "); Serial.print(speed);
-      // Serial.print(" prev error: "); Serial.print(prevError);
-      // Serial.print(" error sum: "); Serial.print(errorSum);
-      // Serial.print(" last time: "); Serial.print(lastSampleTime);
-      // Serial.println();
+      Serial.print(" prev error: "); Serial.print(prevError);
+      Serial.print(" error sum: "); Serial.print(errorSum);
+      Serial.print(" last time: "); Serial.print(lastSampleTime);
+      Serial.println();
+      Serial.print("Motors on: "); Serial.print(RemoteXY.motorsOn);
+      Serial.print(" connection flag: "); Serial.print(RemoteXY.connect_flag);
+      Serial.println();
       // printSpeedInfoToSerial();
       motorPrintDebug();
       #endif
 
-      // sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
+      sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
 }
 
@@ -205,11 +207,11 @@ void loop() {
   static boolean calibrateOnNextLoop = false;
   ArduinoOTA.handle();
   computeSpeedInfo();
-  // processMPUData();
+  processMPUData();
 
   // read controll data
   RemoteXY_Handler();
-  enginesOn = RemoteXY.motorsOn == 1 && RemoteXY.connect_flag;
+  enginesOn = RemoteXY.motorsOn == 1;
   bool newPidOn = enginesOn && RemoteXY.pidOn;
   if (!pidOn && newPidOn) {
     errorSum = 0;
@@ -260,9 +262,6 @@ void loop() {
   if (!enginesOn) {
     motorsStop();
   }
-
-  //TODO: remove, it also somewhere else.
-  printPidDebug();
 
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
