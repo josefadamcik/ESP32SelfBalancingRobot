@@ -112,7 +112,7 @@ void setupBluetooth() {
   RemoteXY.pidKd = 50;
   RemoteXY.pidKdEdit = initialPikKd;
   RemoteXY.motorLimit = speedLimit;
-  RemoteXY.target = targetAngle;
+  RemoteXY.target = initialTargetAngle;
   sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
 }
 
@@ -120,7 +120,8 @@ void setup() {
   Wire.begin();
   Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
   Serial.begin(115200);
-  setupMPU6050(MPU_INTERRUPT_PIN, PREFERENCES_NAMESPACE, dmpDataReady);
+
+  // setupMPU6050(MPU_INTERRUPT_PIN, PREFERENCES_NAMESPACE, dmpDataReady);
   // setupWifi();
   // setupOTA();
   // waitForOTA();
@@ -166,19 +167,19 @@ void printPidDebug() {
     if (now - lastOutput > 250) {
       lastOutput = now;
       #if defined(DEBUG_PID) 
-      Serial.print("PID: "); Serial.print(pidKp); Serial.print(",");Serial.print(pidKi); Serial.print(",");Serial.print(pidKd); Serial.print("; ");
-      Serial.print("Angle: "); Serial.println(inputAngle);
-      Serial.print("PID output: "); Serial.print(pidOutput);
+      // Serial.print("PID: "); Serial.print(pidKp); Serial.print(",");Serial.print(pidKi); Serial.print(",");Serial.print(pidKd); Serial.print("; ");
+      // Serial.print("Angle: "); Serial.println(inputAngle);
+      // Serial.print("PID output: "); Serial.print(pidOutput);
       Serial.print(" speed "); Serial.print(speed);
-      Serial.print(" prev error: "); Serial.print(prevError);
-      Serial.print(" error sum: "); Serial.print(errorSum);
-      Serial.print(" last time: "); Serial.print(lastSampleTime);
-      Serial.println();
-      printSpeedInfoToSerial();
-      // motorPrintDebug();
+      // Serial.print(" prev error: "); Serial.print(prevError);
+      // Serial.print(" error sum: "); Serial.print(errorSum);
+      // Serial.print(" last time: "); Serial.print(lastSampleTime);
+      // Serial.println();
+      // printSpeedInfoToSerial();
+      motorPrintDebug();
       #endif
 
-      sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
+      // sprintf(RemoteXY.txtCalibrate, "%f %f", inputAngle, pidOutput);
     }
 }
 
@@ -204,7 +205,7 @@ void loop() {
   static boolean calibrateOnNextLoop = false;
   ArduinoOTA.handle();
   computeSpeedInfo();
-  processMPUData();
+  // processMPUData();
 
   // read controll data
   RemoteXY_Handler();
@@ -259,6 +260,9 @@ void loop() {
   if (!enginesOn) {
     motorsStop();
   }
+
+  //TODO: remove, it also somewhere else.
+  printPidDebug();
 
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
