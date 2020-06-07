@@ -14,23 +14,24 @@
 #define DEBUG_PID
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
-static volatile bool mpuInterrupt = false;
+static volatile bool DRAM_ATTR mpuInterrupt = false;
+
 static void IRAM_ATTR dmpDataReady() {
   mpuInterrupt = true;
 }
 
 //MOTORS
-#define MOTOR_A1 GPIO_NUM_32
-#define MOTOR_A2 GPIO_NUM_33
-#define MOTOR_B1 GPIO_NUM_26
-#define MOTOR_B2 GPIO_NUM_25
-#define MOTORA_S1 GPIO_NUM_5
-#define MOTORA_S2 GPIO_NUM_17
-#define MOTORB_S1 GPIO_NUM_4
-#define MOTORB_S2 GPIO_NUM_16
+#define MOTOR_A1 GPIO_NUM_33
+#define MOTOR_A2 GPIO_NUM_32
+#define MOTOR_B1 GPIO_NUM_25
+#define MOTOR_B2 GPIO_NUM_26
+#define MOTORA_S1 GPIO_NUM_4
+#define MOTORA_S2 GPIO_NUM_16
+#define MOTORB_S1 GPIO_NUM_5
+#define MOTORB_S2 GPIO_NUM_17
 
-double const initialPidKp=4, initialPidKi = 0, initialPikKd = 0; 
-double const initialTargetAngle = 0;
+double const initialPidKp=8, initialPidKi = 18, initialPikKd = 0.2;
+double const initialTargetAngle = 2.2;
 
 float rPidKpEdit;  // 32767.. +32767 
 float rPidKiEdit;  // 32767.. +32767 
@@ -118,7 +119,7 @@ void setupBluetooth() {
 
 void setup() {
   Wire.begin();
-  Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
+  Wire.setClock(400000); // 400kHz I2C clock
   Serial.begin(115200);
 
   setupMPU6050(MPU_INTERRUPT_PIN, PREFERENCES_NAMESPACE, dmpDataReady);
@@ -177,7 +178,7 @@ void printPidDebug() {
       Serial.print("Motors on: "); Serial.print(RemoteXY.motorsOn);
       Serial.print(" connection flag: "); Serial.print(RemoteXY.connect_flag);
       Serial.println();
-      // printSpeedInfoToSerial();
+      printSpeedInfoToSerial();
       motorPrintDebug();
       #endif
 
@@ -256,6 +257,7 @@ void loop() {
       speed = RemoteXY.joystickA_y;
       speed = map(speed, -100, 100, -speedLimit, speedLimit);
       if (enginesOn) {
+        // motorGo(0, speed);
         motorsGo(speed);
       }
   }
@@ -267,8 +269,11 @@ void loop() {
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
   RemoteXY.angle = map(inputAngle, -90, 90, 0, 100);
   RemoteXY.graph_var1 = prevError;
-  RemoteXY.graph_var2 = speed;
-  RemoteXY.graph_var3 = pidOutput;
+  RemoteXY.graph_var2 = pidOutput;
+  // RemoteXY.graph_var3 = pidOutput;
+  RemoteXY.speedGraph_var1 = speed;
+  RemoteXY.speedGraph_var2 = getSpeedA();
+  RemoteXY.speedGraph_var3 = getSpeedB();
   RemoteXY.speed = map(speed, -100, 100, 0, 100);
   if (calibrateOnNextLoop) {
     RemoteXY.ledBallance_r = 0;

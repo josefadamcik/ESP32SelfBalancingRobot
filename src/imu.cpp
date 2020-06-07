@@ -29,7 +29,7 @@ bool getYPR(float *data) {
     return false;
 }
 
-void setupMPU6050(const uint8_t interruptPin, const char * preferencesNamespace, std::function<void(void)> dmpReadyIsr) {  
+void setupMPU6050(const uint8_t interruptPin, const char * preferencesNamespace, void (*dmpReadyIsr)(void)) {  
   Serial.println(F("Initializing MPU6050"));
   mpu.initialize();
   pinMode(interruptPin, INPUT);
