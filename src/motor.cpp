@@ -21,8 +21,6 @@ static speed_info_t speedInfoA;
 static speed_info_t speedInfoB;
 static speed_info_t *speedInfo[2] = {&speedInfoA, &speedInfoB};
 
-
-
 void printSpeedInfoToSerial() {
   Serial.print("Measured speed A: "); Serial.print(getSpeedA());
   Serial.print(" mm/s; angular velocity: ");

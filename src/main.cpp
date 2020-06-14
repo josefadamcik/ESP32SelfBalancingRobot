@@ -106,6 +106,20 @@ void waitForOTA() {
   }
 }
 
+void printDebug() {
+    static unsigned long lastOutput = 0;
+    unsigned long now = millis();
+    if (now - lastOutput > 250) {
+      lastOutput = now;
+      #if defined(DEBUG_PID)
+      pidPrintDebug();
+      Serial.print("speed "); Serial.println(speed);
+      printSpeedInfoToSerial();
+      motorPrintDebug();
+      #endif
+    }
+}
+
 void setupBluetooth() {
   Serial.println("Setub bluettooth");
   RemoteXY_Init();
@@ -142,7 +156,7 @@ void processMPUData() {
 
   if (getYPR(ypr)) { 
     double inputAngle = ypr[2] * 180 / M_PI;
-    double pidOutput = executePid(inputAngle);
+    double pidOutput = pidExecute(inputAngle);
     double pidSpeed = constrain(pidOutput, -speedLimit, speedLimit);
     if (enginesOn && RemoteXY.pidOn) {
       if (abs(speed - pidSpeed) >= 0.1) {
@@ -150,7 +164,7 @@ void processMPUData() {
         speed = pidSpeed;
       }
     }
-    printPidDebug(inputAngle);
+    printDebug();
   }
 }
 
@@ -163,8 +177,8 @@ void updateConfigFromRemote() {
       rPidKdEdit = RemoteXY.pidKdEdit;
       pidSetKeoficients(rPidKpEdit, rPidKiEdit, rPidKdEdit);
   }
-  if (RemoteXY.target != targetAngle) {
-    targetAngle = RemoteXY.target;
+  if (RemoteXY.target != Pid.target) {
+    pidSetTarget(RemoteXY.target);
   }
 
   if (RemoteXY.motorLimit != speedLimit) {
@@ -176,9 +190,9 @@ void updateConfigFromRemote() {
 void updateDataForRemote() {
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
-  RemoteXY.angle = map(inputAngle, -90, 90, 0, 100);
-  RemoteXY.graph_var1 = prevError;
-  RemoteXY.graph_var2 = pidOutput;
+  RemoteXY.angle = map(Pid.input, -90, 90, 0, 100);
+  RemoteXY.graph_var1 = Pid.prevError;
+  RemoteXY.graph_var2 = Pid.output;
   // RemoteXY.graph_var3 = pidOutput;
   RemoteXY.speedGraph_var1 = speed;
   RemoteXY.speedGraph_var2 = getSpeedA();
@@ -188,11 +202,11 @@ void updateDataForRemote() {
     RemoteXY.ledBallance_r = 0;
     RemoteXY.ledBallance_g = 0;
     RemoteXY.ledBallance_b = 255;
-  } else if (abs(inputAngle) < 2) {
+  } else if (abs(Pid.input) < 2) {
     RemoteXY.ledBallance_r = 0;
     RemoteXY.ledBallance_g = 255;
     RemoteXY.ledBallance_b = 0;
-  } else if (abs(inputAngle) < 8) {
+  } else if (abs(Pid.input) < 8) {
     RemoteXY.ledBallance_r = 255;
     RemoteXY.ledBallance_g = 255;
     RemoteXY.ledBallance_b = 0;
