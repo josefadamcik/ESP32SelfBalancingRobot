@@ -44,6 +44,8 @@ int8_t speedLimit = 70;
 
 double speed;
 
+static boolean calibrateOnNextLoop = false;
+
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -152,34 +154,7 @@ void processMPUData() {
   }
 }
 
-void loop() {
-  static boolean calibrateOnNextLoop = false;
-  ArduinoOTA.handle();
-  computeSpeedInfo();
-  processMPUData();
-
-  // read controll data
-  RemoteXY_Handler();
-  enginesOn = RemoteXY.motorsOn == 1;
-  bool newPidOn = enginesOn && RemoteXY.pidOn;
-  if (!pidOn && newPidOn) {
-    pidReset();
-    speed = 0;
-  }
-  pidOn = newPidOn;
-
-  if (calibrateOnNextLoop) {
-    calibrateOnNextLoop = false;
-    calibrateMPU(PREFERENCES_NAMESPACE);
-    // motorTest(speedLimit);
-    // motorsTest(speedLimit);
-  } else {
-    if (RemoteXY.buttonCalibrate) {
-      calibrateOnNextLoop = true;
-    }
-  }
-
-  //check PID config
+void updateConfigFromRemote() {
   if (RemoteXY.pidKdEdit != rPidKdEdit 
     || RemoteXY.pidKpEdit != rPidKpEdit
     || RemoteXY.pidKiEdit != rPidKiEdit) {
@@ -196,19 +171,9 @@ void loop() {
     speedLimit = RemoteXY.motorLimit;
     sprintf(RemoteXY.motorLimitOut, "%d",speedLimit);
   }
-  
-  if (!pidOn) {
-      speed = RemoteXY.joystickA_y;
-      speed = map(speed, -100, 100, -speedLimit, speedLimit);
-      if (enginesOn) {
-        // motorGo(0, speed);
-        motorsGo(speed);
-      }
-  }
-  if (!enginesOn) {
-    motorsStop();
-  }
+}
 
+void updateDataForRemote() {
   RemoteXY.ledState_g = enginesOn ? 255: 0;
   RemoteXY.ledState_r = !enginesOn ? 255: 0;
   RemoteXY.angle = map(inputAngle, -90, 90, 0, 100);
@@ -236,5 +201,49 @@ void loop() {
     RemoteXY.ledBallance_g = 0;
     RemoteXY.ledBallance_b = 0;
   }
+}
+
+void handleCalibration() {
+  if (calibrateOnNextLoop) {
+    calibrateOnNextLoop = false;
+    calibrateMPU(PREFERENCES_NAMESPACE);
+  } else {
+    if (RemoteXY.buttonCalibrate) {
+      calibrateOnNextLoop = true;
+    }
+  }
+}
+
+void loop() {
+
+  // ArduinoOTA.handle();
+  computeSpeedInfo();
+  processMPUData();
+  RemoteXY_Handler();
+
+  enginesOn = RemoteXY.motorsOn == 1;
+  bool newPidOn = enginesOn && RemoteXY.pidOn;
+  if (!pidOn && newPidOn) {
+    pidReset();
+    speed = 0;
+  }
+  pidOn = newPidOn;
+
+  handleCalibration();
+  updateConfigFromRemote();
+  
+  if (!pidOn) {
+      speed = RemoteXY.joystickA_y;
+      speed = map(speed, -100, 100, -speedLimit, speedLimit);
+      if (enginesOn) {
+        // motorGo(0, speed);
+        motorsGo(speed);
+      }
+  }
+  if (!enginesOn) {
+    motorsStop();
+  }
+
+  updateDataForRemote();
 }
 
