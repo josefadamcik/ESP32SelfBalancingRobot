@@ -22,7 +22,7 @@ static speed_info_t speedInfoB;
 static speed_info_t *speedInfo[2] = {&speedInfoA, &speedInfoB};
 
 void printSpeedInfoToSerial() {
-  Serial.print("Measured speed A: "); Serial.print(getSpeedA());
+  Serial.print("Measured speed A: "); Serial.print(speedInfoA.velocity);
   Serial.print(" mm/s; angular velocity: ");
   Serial.print(speedInfoA.angularVelocity);
   Serial.print(" rad/s; RPS: ");
@@ -32,6 +32,11 @@ void printSpeedInfoToSerial() {
   Serial.print(speedInfoB.angularVelocity);
   Serial.print(" rad/s; RPS: ");
   Serial.println(speedInfoB.rps);
+  Serial.print(" Diff A-B: ");
+  Serial.print(speedInfoA.velocity - speedInfoB.velocity);
+  Serial.print(" angular velocity:" );
+  Serial.print(speedInfoA.angularVelocity - speedInfoB.angularVelocity);
+  Serial.println();
 }
 
 uint32_t getPulseCount(pcnt_unit_t unit) {
@@ -168,12 +173,9 @@ void motorGo(uint8_t motor, float speed) {
   }
 }
 
-void motorsGo(float speed) {
-  if (speed < 0) {
-    motorsReverse(speed * -1.0);
-  } else {
-    motorsForward(speed);
-  }
+void motorsGo(float speedLeft, float speedRight) {
+  motorGo(0, speedLeft);
+  motorGo(1, speedRight);
 }
 
 void motorsStop() {
@@ -224,7 +226,7 @@ void motorsTest(int8_t speedLimit) {
   for (int i = 0; i <= speedLimit ; i++) {
     float duty = i/1.0;
     Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
+    motorsGo(duty,duty);
     delay(500);
     computeSpeedInfo();
     printSpeedInfoToSerial();
@@ -232,7 +234,7 @@ void motorsTest(int8_t speedLimit) {
   for (int i = speedLimit; i >=0; i--) {
     float duty = i/1.0;
     Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
+    motorsGo(duty,duty);
     delay(500);
     computeSpeedInfo();
     printSpeedInfoToSerial();
@@ -240,7 +242,7 @@ void motorsTest(int8_t speedLimit) {
    for (int i = 0; i <= speedLimit ; i++) {
     float duty = i/-1.0;
     Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
+    motorsGo(duty,duty);
     delay(500);
     computeSpeedInfo();
     printSpeedInfoToSerial();
@@ -248,7 +250,7 @@ void motorsTest(int8_t speedLimit) {
   for (int i = speedLimit; i >=0; i--) {
     float duty = i/-1.0;
     Serial.println("Duty cycle:  "); Serial.println(duty);
-    motorsGo(duty);
+    motorsGo(duty,duty);
     delay(500);
     computeSpeedInfo();
     printSpeedInfoToSerial();

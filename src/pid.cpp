@@ -17,16 +17,16 @@ double pidExecute(double newInputAngle) {
 }
 
 void pidPrintDebug() {
-  Serial.print("PID: "); Serial.print(Pid.kp); 
-  Serial.print(",");Serial.print(Pid.ki); 
-  Serial.print(",");Serial.print(Pid.kd); 
+  Serial.print("PID: KP "); Serial.print(Pid.kp); 
+  Serial.print(", KI ");Serial.print(Pid.ki); 
+  Serial.print(", KD ");Serial.print(Pid.kd); 
   Serial.print("; ");
-  Serial.print("Angle: "); Serial.println(Pid.input);
-  Serial.print("Target Ang.: "); Serial.println(Pid.target);
-  Serial.print("PID output: "); Serial.print(Pid.output);
+  Serial.print("input: "); Serial.println(Pid.input);
+  Serial.print(" target: "); Serial.println(Pid.target);
+  Serial.print(" output: "); Serial.print(Pid.output);
   Serial.print(" prev error: "); Serial.print(Pid.prevError);
   Serial.print(" error sum: "); Serial.print(Pid.errorSum);
-  Serial.print(" last time: "); Serial.print(Pid.lastSampleTime);
+  Serial.print(" last time: "); Serial.println(Pid.lastSampleTime);
 }
 
 void pidReset() {
