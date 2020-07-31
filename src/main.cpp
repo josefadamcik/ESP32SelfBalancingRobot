@@ -12,13 +12,18 @@
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
 #define PREFERENCES_NAMESPACE "app"
 
+//FREQUENCY CONTROLL
+#define LOOP_TIME_MICRO = 5000; //200hz
+
+
 static volatile bool DRAM_ATTR mpuInterrupt = false;
 
 static void IRAM_ATTR dmpDataReady() {
   mpuInterrupt = true;
 }
 
-#define DEBUG_PRINT
+// #define DEBUG_PRINT
+// #define DEBUG_PRINT_LOOP_STAT
 
 //MOTORS
 #define MOTOR_A1 GPIO_NUM_33
@@ -114,11 +119,10 @@ void setup() {
   Serial.println("setup done");
 }
 
-void processMPUData() {
-  if (!isMPUReady() || !mpuInterrupt) return;
-  mpuInterrupt = false;
-
+boolean processMPUData() {
+  if (!isMPUReady() || !mpuInterrupt) return false;
   if (getYPR(State.imuYawPitchRoll)) { 
+    mpuInterrupt = false;
     double inputAngle = State.imuYawPitchRoll[2] * 180 / M_PI;
     double pidOutput = pidExecute(inputAngle);
     double pidSpeed = constrain(pidOutput, -State.speedLimit, State.speedLimit);
@@ -131,8 +135,9 @@ void processMPUData() {
         State.speed = pidSpeed;
       }
     }
-    printDebug();
+   return true;
   }
+  return false;
 }
 
 void updatePidEnabledFromRemote() {
@@ -291,23 +296,40 @@ void handleThrottle() {
   }
 }
 
+void computeLoopTime() {
+  static long lastLoopTime = 0;
+  static long lastLoopUsedTime = 0;
+  static unsigned long loopStartTime = 0;
+  static float deltaTime = 0;  // unit: seconds
+  lastLoopUsedTime = micros() - loopStartTime; 
+  lastLoopTime = micros() - loopStartTime;
+  deltaTime = (float)lastLoopTime / (float)1000000;
+  loopStartTime = micros();
+  #ifdef DEBUG_PRINT_LOOP_STAT 
+  Serial.println(lastLoopUsedTime); 
+  #endif
+}
+
 void loop() {
   // ArduinoOTA.handle();
   computeSpeedInfo();
-  processMPUData();
   RemoteXY_Handler();
+  boolean processingTriggered = processMPUData();
+  if (processingTriggered) {
+    updateMotorsEnabledFromRemote();
+    updatePidEnabledFromRemote();
+    handleCalibration();
+    updateConfigFromRemote();
 
-  updateMotorsEnabledFromRemote();
-  updatePidEnabledFromRemote();
-  handleCalibration();
-  updateConfigFromRemote();
+    handleSteering();
+    handleThrottle();
+    
+    if (!State.motorsEnabled) {
+      motorsStop();
+    }
 
-  handleSteering();
-  handleThrottle();
-  
-  if (!State.motorsEnabled) {
-    motorsStop();
+    updateDataForRemote();
+    printDebug();
+    computeLoopTime();
   }
-
-  updateDataForRemote();
 }

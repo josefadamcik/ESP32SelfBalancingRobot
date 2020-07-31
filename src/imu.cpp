@@ -19,7 +19,6 @@ bool isMPUReady() {
     return dmpReady;
 }
 bool getYPR(float *data) {
-
     if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
         mpu.dmpGetQuaternion(&q, fifoBuffer);
         mpu.dmpGetGravity(&gravity, &q);

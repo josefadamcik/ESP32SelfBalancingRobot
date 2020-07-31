@@ -1,7 +1,7 @@
 #include "motor.h"
 
 #define WHEEL_RADIUS_MM 40.0
-#define SPEED_MEASUREMENT_PERIOD_MS 50
+#define SPEED_MEASUREMENT_PERIOD_MS 5
 #define PULSE_PER_REVOLUTION 1800.0
 #define USE_FAST_DECAY
 #define PWM_FREQ 1000
@@ -50,9 +50,12 @@ void computeSpeedInfoForChannel(pcnt_unit_t unit, double timeCoef) {
   speedInfo[unit]->pulseCount = getPulseCount(unit);
   speedInfo[unit]->rps = speedInfo[unit]->pulseCount * timeCoef / PULSE_PER_REVOLUTION;
   speedInfo[unit]->angularVelocity = M_TWOPI * speedInfo[unit]->rps;
-  speedInfo[unit]->velocity = speedInfo[unit]->angularVelocity * WHEEL_RADIUS_MM;
-  // Serial.println("pulse "); Serial.print(unit); Serial.print(" "); Serial.print(speedInfo[unit]->pulseCount);
-  // Serial.print("rps "); Serial.print(speedInfo[unit]->pulseCount);
+  speedInfo[unit]->velocity = speedInfo[unit]->angularVelocity * WHEEL_RADIUS_MM; //mm/s
+  // Serial.print("pulse "); Serial.print(unit); Serial.print(" "); Serial.print(speedInfo[unit]->pulseCount);
+  // Serial.print(" rps "); Serial.print(speedInfo[unit]->rps);
+  // Serial.print(" angular velocity "); Serial.print(speedInfo[unit]->angularVelocity);
+  // Serial.print(" velocity "); Serial.print(speedInfo[unit]->velocity);
+  // Serial.println();
 }
 
 void computeSpeedInfo() {
