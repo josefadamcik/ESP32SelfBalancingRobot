@@ -17,6 +17,7 @@ void motorsGo(float speedLeft, float speedRight);
 void motorGo(uint8_t motor, float speed);
 void motorsStop();
 void computeSpeedInfo();
+double getAverageRps();
 double getSpeedA();
 double getSpeedB();
 void printSpeedInfoToSerial();

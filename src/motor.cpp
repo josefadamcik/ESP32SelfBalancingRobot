@@ -36,24 +36,25 @@ void computeSpeedInfoForChannel(pcnt_unit_t unit, double timeCoef) {
     speedInfo[unit]->angularVelocity = M_TWOPI * speedInfo[unit]->rps;
     speedInfo[unit]->velocity =
         speedInfo[unit]->angularVelocity * WHEEL_RADIUS_MM;  // mm/s
-    Serial.print("pulse "); Serial.print(unit); Serial.print(" ");
-    Serial.print(speedInfo[unit]->pulseCount); Serial.print(" rps ");
-    Serial.print(speedInfo[unit]->rps); Serial.print(" angular velocity ");
-    Serial.print(speedInfo[unit]->angularVelocity); 
-    Serial.print(" velocity "); Serial.print(speedInfo[unit]->velocity); Serial.println();
+    // Serial.print("pulse "); Serial.print(unit); Serial.print(" ");
+    // Serial.print(speedInfo[unit]->pulseCount); Serial.print(" rps ");
+    // Serial.print(speedInfo[unit]->rps); Serial.print(" angular velocity ");
+    // Serial.print(speedInfo[unit]->angularVelocity); 
+    // Serial.print(" velocity "); Serial.print(speedInfo[unit]->velocity); Serial.println();
 }
 
+/** Don't run this too often. 10ms seems to be ok, less might increase error.*/
 void computeSpeedInfo() {
     uint32_t now = millis();
-    if (now - lastSpeedMeasurementMs > SPEED_MEASUREMENT_PERIOD_MS) {
-        double timeCoef = 1000.0 / (now - lastSpeedMeasurementMs);  // per sec
-        computeSpeedInfoForChannel(PCNT_UNIT_0, timeCoef);
-        computeSpeedInfoForChannel(PCNT_UNIT_1, timeCoef);
-        pcnt_counter_clear(PCNT_UNIT_0);
-        pcnt_counter_clear(PCNT_UNIT_1);
-        lastSpeedMeasurementMs = now;
-    }
+    double timeCoef = 1000.0 / (now - lastSpeedMeasurementMs);  // per sec
+    computeSpeedInfoForChannel(PCNT_UNIT_0, timeCoef);
+    computeSpeedInfoForChannel(PCNT_UNIT_1, timeCoef);
+    pcnt_counter_clear(PCNT_UNIT_0);
+    pcnt_counter_clear(PCNT_UNIT_1);
+    lastSpeedMeasurementMs = now;
 }
+
+double getAverageRps() { return (speedInfoA.rps + speedInfoB.rps) / 2;}
 
 double getSpeedA() { return speedInfoA.velocity; }
 double getSpeedB() { return speedInfoB.velocity; }

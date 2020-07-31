@@ -1,6 +1,6 @@
 #include "pid.h"
 
-double Pid::pidExecute(double newInputAngle) {
+double Pid::execute(double newInputAngle) {
     input = newInputAngle;
     uint32_t time = millis();
     double error = target - input;
@@ -16,7 +16,7 @@ double Pid::pidExecute(double newInputAngle) {
     return output;
 }
 
-void Pid::pidPrintDebug() {
+void Pid::printDebug() {
     Serial.print("PID: KP ");
     Serial.print(kp);
     Serial.print(", KI ");
@@ -38,15 +38,15 @@ void Pid::pidPrintDebug() {
     Serial.println(lastSampleTime);
 }
 
-void Pid::pidReset() {
+void Pid::reset() {
     errorSum = 0;
     prevError = 0;
     output = 0;
 }
 
-void Pid::pidSetKeoficients(double kp, double ki, double kd) {
+void Pid::setKeoficients(double kp, double ki, double kd) {
     this->kp = kp;
     this->ki = ki;
     this->kd = kd;
 }
-void Pid::pidSetTarget(double target) { this->target = target; }
+void Pid::setTarget(double target) { this->target = target; }

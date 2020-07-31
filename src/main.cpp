@@ -12,16 +12,13 @@
 #define MPU_INTERRUPT_PIN 19  // use pin 2 on Arduino Uno & most boards
 #define PREFERENCES_NAMESPACE "app"
 
-// FREQUENCY CONTROLL
-#define LOOP_TIME_MICRO = 5000;  // 200hz
-
 static volatile bool DRAM_ATTR mpuInterrupt = false;
 
 static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 
-//#define DEBUG_PRINT_IMU
+#define DEBUG_PRINT_PID
 #define DEBUG_PRINT_SPEED
-// #define DEBUG_PRINT_STATE
+#define DEBUG_PRINT_STATE
 // #define DEBUG_PRINT_LOOP_STAT
 
 // MOTORS
@@ -48,20 +45,28 @@ struct {
     int8_t rTargetAdjust;
     bool motorsEnabled = false;
     bool pidEnabled = false;
-    int8_t speedLimit = 70;
-    double speed;
+    int8_t dutyCycleLimit = 100;
+    double dutyCycle;
     boolean calibrateOnNextLoop = false;
     int8_t throttle = 0;
     int8_t steering = 0;
+    double inputAngle = 0;
+    double targetAngle = 0;
     double targetAdjustFromThrottle = 0;
     double leftSpeedAdjustFromSteering = 0;
     double rightSpeedAdjustFromSteering = 0;
+    double currentSpeed = 0;
 } State;
 
 // PID
-double const initialPidKp = 4, initialPidKi = 18, initialPikKd = 0.1;
-double const initialTargetAngle = -0.5;
+const double targetAngleLimit = 5;
+const double balancingAngleLimit = 10;
+
+double const initialPidKp = 5, initialPidKi = 20, initialPikKd = 0.2;
+double const initialTargetAngle = 0;
 Pid pidAngle(initialPidKp, initialPidKi, initialPikKd, initialTargetAngle);
+
+Pid pidSpeed(0.1, 0.1, 0, 0);
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -73,21 +78,25 @@ void printDebug() {
     if (now - lastOutput > 250) {
         lastOutput = now;
 #if defined(DEBUG_PRINT_PID)
-        pidPrintDebug();
+        pidAngle.printDebug();
 #endif
 #if defined(DEBUG_PRINT_STATE)
-        Serial.print("speed ");
-        Serial.print(State.speed);
-        Serial.print(" throttle: ");
-        Serial.print(State.throttle);
-        Serial.print(" thrt adj: ");
-        Serial.print(State.targetAdjustFromThrottle);
-        Serial.print(" steering: ");
-        Serial.print(State.steering);
-        Serial.print(" steer left adj: ");
-        Serial.print(State.leftSpeedAdjustFromSteering);
-        Serial.print(" steer rigth adj: ");
-        Serial.print(State.rightSpeedAdjustFromSteering);
+        Serial.print("duty ");
+        Serial.print(State.dutyCycle);
+        Serial.print(" target angle ");
+        Serial.print(State.targetAngle);
+        Serial.print(" speed ");
+        Serial.print(State.currentSpeed);
+        // Serial.print(" throttle: ");
+        // Serial.print(State.throttle);
+        // Serial.print(" thrt adj: ");
+        // Serial.print(State.targetAdjustFromThrottle);
+        // Serial.print(" steering: ");
+        // Serial.print(State.steering);
+        // Serial.print(" steer left adj: ");
+        // Serial.print(State.leftSpeedAdjustFromSteering);
+        // Serial.print(" steer rigth adj: ");
+        // Serial.print(State.rightSpeedAdjustFromSteering);
         Serial.println();
 #endif
 #if defined(DEBUG_PRINT_SPEED)
@@ -113,9 +122,8 @@ void setupBluetooth() {
     RemoteXY.pidKiEdit = initialPidKi;
     RemoteXY.pidKdEdit = initialPikKd;
     resetRometePidKSliders();
-    RemoteXY.motorLimit = State.speedLimit;
-    RemoteXY.target = initialTargetAngle;
-    sprintf(RemoteXY.motorLimitOut, "%d", State.speedLimit);
+    RemoteXY.motorLimit = State.dutyCycleLimit;
+    sprintf(RemoteXY.motorLimitOut, "%d", State.dutyCycleLimit);
 }
 
 void setup() {
@@ -129,7 +137,6 @@ void setup() {
     // waitForOTA();
     setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
     setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
-    computeSpeedInfo();
     setupBluetooth();
     Serial.println("setup done");
 }
@@ -138,41 +145,63 @@ boolean processMPUData() {
     if (!isMPUReady() || !mpuInterrupt) return false;
     if (getYPR(State.imuYawPitchRoll)) {
         mpuInterrupt = false;
-        double inputAngle = State.imuYawPitchRoll[2] * 180 / M_PI;
-        double pidOutput = pidAngle.pidExecute(inputAngle);
-        double pidSpeed =
-            constrain(pidOutput, -State.speedLimit, State.speedLimit);
-        if (State.motorsEnabled && RemoteXY.pidOn) {
-            if (abs(State.speed - pidSpeed) >= 0.1) {
-                motorsGo(State.speed + State.leftSpeedAdjustFromSteering,
-                         State.speed + State.rightSpeedAdjustFromSteering);
-                State.speed = pidSpeed;
-            }
-        }
+        State.inputAngle = State.imuYawPitchRoll[2] * 180 / M_PI;
         return true;
     }
     return false;
 }
 
-void updatePidEnabledFromRemote() {
-    bool newPidOn = State.motorsEnabled && RemoteXY.pidOn;
-    if (!State.pidEnabled && newPidOn) {
-        pidAngle.pidReset();
-        State.speed = 0;
-        State.throttle = 0;
-        State.leftSpeedAdjustFromSteering = 0;
-        State.rightSpeedAdjustFromSteering = 0;
-        RemoteXY.joystickA_x = 0;
-        RemoteXY.joystickA_y = 0;
-    } else if (State.pidEnabled && !newPidOn) {
-        State.speed = 0;
-        State.throttle = 0;
-        State.leftSpeedAdjustFromSteering = 0;
-        State.rightSpeedAdjustFromSteering = 0;
-        RemoteXY.joystickA_x = 0;
-        RemoteXY.joystickA_y = 0;
+void ballance() {
+    double targetSpeed = 0; //(rps)
+    double currentSpeed = getAverageRps();
+    if (State.dutyCycle < 0) {//fix the fact we always measure positive speed
+        currentSpeed = -currentSpeed;
     }
-    State.pidEnabled = newPidOn;
+    State.currentSpeed = currentSpeed;
+    pidSpeed.setTarget(targetSpeed);
+    State.targetAngle = pidSpeed.execute(currentSpeed);
+
+    pidAngle.setTarget(State.targetAngle);
+    double pidOutput = pidAngle.execute(State.inputAngle);
+    //from here the speed is more like duty cycle for motor.
+    double pidSpeed = constrain(pidOutput, -State.dutyCycleLimit, State.dutyCycleLimit);
+    if (State.pidEnabled && State.motorsEnabled) {
+        if (abs(State.dutyCycle - pidSpeed) >= 0.1) {
+            motorsGo(State.dutyCycle + State.leftSpeedAdjustFromSteering,
+                        State.dutyCycle + State.rightSpeedAdjustFromSteering);
+            State.dutyCycle = pidSpeed;
+        }
+    }
+}
+
+void turnOnBallancing() {
+    pidAngle.reset();
+    State.dutyCycle = 0;
+    State.throttle = 0;
+    State.leftSpeedAdjustFromSteering = 0;
+    State.rightSpeedAdjustFromSteering = 0;
+    RemoteXY.joystickA_x = 0;
+    RemoteXY.joystickA_y = 0;
+}
+
+void turnOffBalancing() {
+    State.dutyCycle = 0;
+    State.throttle = 0;
+    State.leftSpeedAdjustFromSteering = 0;
+    State.rightSpeedAdjustFromSteering = 0;
+    RemoteXY.joystickA_x = 0;
+    RemoteXY.joystickA_y = 0;
+}
+
+void updatePidEnabledFromRemote() {
+    bool validAngle = abs(State.inputAngle) < balancingAngleLimit;
+    bool shouldBeOn = State.motorsEnabled && RemoteXY.pidOn && validAngle;
+    if (!State.pidEnabled && shouldBeOn) {
+        turnOnBallancing();
+    } else if (State.pidEnabled && !shouldBeOn) {
+        turnOffBalancing();
+    }
+    State.pidEnabled = shouldBeOn;
 }
 
 void updateMotorsEnabledFromRemote() {
@@ -181,7 +210,8 @@ void updateMotorsEnabledFromRemote() {
 
 float adjustPidKoefProportionaly(float base, int8_t adjustment) {
     float coef = (adjustment - 50.0) / 50.0;  //-1..1
-    coef = coef * 0.1;                        // allow for -10 ... 10 %;
+    // coef = coef * 0.1;                        // allow for -10 ... 10 %;
+    //allo -+ 100%
     return base + (base * coef);
 }
 
@@ -195,10 +225,11 @@ void updatePidTarget() {
     double newTarget =
         adjustTargetProportinaly(State.rTargetEdit, State.rTargetAdjust);
     newTarget += State.targetAdjustFromThrottle;
-    pidAngle.pidSetTarget(newTarget);
+    pidAngle.setTarget(newTarget);
 }
 
 void updateConfigFromRemote() {
+    boolean keofChanged = false;
     if (RemoteXY.pidKdEdit != State.rPidKdEdit ||
         RemoteXY.pidKpEdit != State.rPidKpEdit ||
         RemoteXY.pidKiEdit != State.rPidKiEdit) {
@@ -206,8 +237,8 @@ void updateConfigFromRemote() {
         State.rPidKiEdit = RemoteXY.pidKiEdit;
         State.rPidKdEdit = RemoteXY.pidKdEdit;
         resetRometePidKSliders();
-        pidAngle.pidSetKeoficients(State.rPidKpEdit, State.rPidKiEdit,
-                                   State.rPidKdEdit);
+        pidAngle.setKeoficients(State.rPidKpEdit, State.rPidKiEdit, State.rPidKdEdit);
+        keofChanged = true;
     }
 
     if (RemoteXY.pidKp != State.rPidKp || RemoteXY.pidKi != State.rPidKi ||
@@ -215,53 +246,51 @@ void updateConfigFromRemote() {
         State.rPidKp = RemoteXY.pidKp;
         State.rPidKi = RemoteXY.pidKi;
         State.rPidKd = RemoteXY.pidKd;
-        pidAngle.pidSetKeoficients(
+        pidAngle.setKeoficients(
             adjustPidKoefProportionaly(State.rPidKpEdit, State.rPidKp),
             adjustPidKoefProportionaly(State.rPidKiEdit, State.rPidKi),
             adjustPidKoefProportionaly(State.rPidKdEdit, State.rPidKd));
+        keofChanged = true;
     }
 
-    if (RemoteXY.target != State.rTargetEdit) {
-        State.rTargetEdit = RemoteXY.target;
-        State.rTargetAdjust = 50;
-        RemoteXY.targetAdjust = 50;
-        updatePidTarget();
+    if (keofChanged) {
+        sprintf(RemoteXY.pidKpVal, "%f", pidAngle.kp);
+        sprintf(RemoteXY.pidKiVal, "%f", pidAngle.ki);
+        sprintf(RemoteXY.pidKdVal, "%f", pidAngle.kd);
     }
 
-    if (RemoteXY.targetAdjust != State.rTargetAdjust) {
-        State.rTargetAdjust = RemoteXY.targetAdjust;
-        updatePidTarget();
-    }
-
-    if (RemoteXY.motorLimit != State.speedLimit) {
-        State.speedLimit = RemoteXY.motorLimit;
-        sprintf(RemoteXY.motorLimitOut, "%d", State.speedLimit);
+    if (RemoteXY.motorLimit != State.dutyCycleLimit) {
+        State.dutyCycleLimit = RemoteXY.motorLimit;
+        sprintf(RemoteXY.motorLimitOut, "%d", State.dutyCycleLimit);
     }
 }
 
 void updateDataForRemote() {
     RemoteXY.ledState_g = State.motorsEnabled ? 255 : 0;
     RemoteXY.ledState_r = !State.motorsEnabled ? 255 : 0;
-    RemoteXY.angle = map(pidAngle.input, -90, 90, 0, 100);
     RemoteXY.graph_var1 = pidAngle.prevError;
     RemoteXY.graph_var2 = pidAngle.output;
     // RemoteXY.graph_var3 = pidOutput;
-    RemoteXY.speedGraph_var1 = State.speed;
+    RemoteXY.speedGraph_var1 = State.dutyCycle;
     RemoteXY.speedGraph_var2 = getSpeedA();
     RemoteXY.speedGraph_var3 = getSpeedB();
     RemoteXY.speedGraph_var4 = getSpeedA() - getSpeedB();
-    RemoteXY.speed = map(State.speed, -100, 100, 0, 100);
+    RemoteXY.speed = map(State.dutyCycle, -100, 100, 0, 100);
     if (State.calibrateOnNextLoop) {
         RemoteXY.ledBallance_r = 0;
         RemoteXY.ledBallance_g = 0;
         RemoteXY.ledBallance_b = 255;
-    } else if (abs(pidAngle.input) < 2) {
+    } else if (abs(pidAngle.input - State.targetAngle) < 1) {
         RemoteXY.ledBallance_r = 0;
         RemoteXY.ledBallance_g = 255;
         RemoteXY.ledBallance_b = 0;
-    } else if (abs(pidAngle.input) < 8) {
+    } else if (abs(pidAngle.input - State.targetAngle) < 5) {
         RemoteXY.ledBallance_r = 255;
         RemoteXY.ledBallance_g = 255;
+        RemoteXY.ledBallance_b = 0;
+    } else if (abs(pidAngle.input - State.targetAngle) < 10) {
+        RemoteXY.ledBallance_r = 255;
+        RemoteXY.ledBallance_g = 128;
         RemoteXY.ledBallance_b = 0;
     } else {
         RemoteXY.ledBallance_r = 255;
@@ -290,22 +319,22 @@ void handleSteering() {
 }
 
 void handleThrottle() {
-    if (State.pidEnabled) {
-        if (State.throttle != RemoteXY.joystickA_y) {
-            State.throttle = RemoteXY.joystickA_y;
-            State.targetAdjustFromThrottle = State.throttle * 0.04;
-            updatePidTarget();
-        }
-    } else {
-        State.targetAdjustFromThrottle = 0;
-        State.speed = RemoteXY.joystickA_y;
-        State.speed =
-            map(State.speed, -100, 100, -State.speedLimit, State.speedLimit);
-        if (State.motorsEnabled) {
-            motorsGo(State.speed + State.leftSpeedAdjustFromSteering,
-                     State.speed + State.rightSpeedAdjustFromSteering);
-        }
-    }
+    // if (State.pidEnabled) {
+    //     if (State.throttle != RemoteXY.joystickA_y) {
+    //         State.throttle = RemoteXY.joystickA_y;
+    //         State.targetAdjustFromThrottle = State.throttle * 0.04;
+    //         updatePidTarget();
+    //     }
+    // } else {
+    //     State.targetAdjustFromThrottle = 0;
+    //     State.dutyCycle = RemoteXY.joystickA_y;
+    //     State.dutyCycle =
+    //         map(State.dutyCycle, -100, 100, -State.dutyCycleLimit, State.dutyCycleLimit);
+    //     if (State.motorsEnabled) {
+    //         motorsGo(State.dutyCycle + State.leftSpeedAdjustFromSteering,
+    //                  State.dutyCycle + State.rightSpeedAdjustFromSteering);
+    //     }
+    // }
 }
 
 void computeLoopTime() {
@@ -324,21 +353,27 @@ void computeLoopTime() {
 
 void loop() {
     // ArduinoOTA.handle();
-    computeSpeedInfo();
     RemoteXY_Handler();
     boolean processingTriggered = processMPUData();
     if (processingTriggered) {
         updateMotorsEnabledFromRemote();
         updatePidEnabledFromRemote();
+
+        computeSpeedInfo();
+        ballance();
+
         handleCalibration();
         updateConfigFromRemote();
 
-        handleSteering();
+        // handleSteering();
         handleThrottle();
 
-        if (!State.motorsEnabled) {
+        if (!State.pidEnabled || !State.motorsEnabled) {
             motorsStop();
         }
+        // if (!State.motorsEnabled) {
+            // motorsStop();
+        // }
 
         updateDataForRemote();
         printDebug();
