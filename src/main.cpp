@@ -67,11 +67,11 @@ struct {
 const double targetAngleLimit = 5;
 const double balancingAngleLimit = 15;
 
-double const initialPidKp = 7, initialPidKi = 10, initialPidKd = 0.2;
+double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
 double const initialTargetAngle = 0;
 Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
 
-double const initialPidSpeedKp = 0.01, initialPidSpeedKi = 1, initialPidSpeedKd = 0;
+double const initialPidSpeedKp = 0.6, initialPidSpeedKi = 23, initialPidSpeedKd = 0;
 Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
 
 // ================================================================
@@ -175,8 +175,8 @@ void ballance() {
         currentSpeed = -currentSpeed;
     }
     State.currentSpeed = currentSpeed;
-    pidSpeed.setTarget(targetSpeed);
-    State.targetAngle = pidSpeed.execute(currentSpeed);
+    pidSpeed.setTarget(targetSpeed); 
+    State.targetAngle = -pidSpeed.execute(currentSpeed);
 
     pidAngle.setTarget(State.targetAngle);
     double pidOutput = pidAngle.execute(State.inputAngle);
