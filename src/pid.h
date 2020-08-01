@@ -20,11 +20,12 @@ class Pid {
         double input = 0;
         double output = 0;
         double prevError = 0;
-    private: 
         double kp;
         double ki;
         double kd;
+    private: 
         double target;
+        double integral;
         double errorSum = 0;
         uint32_t lastPidSample = 0;
         double lastSampleTime;

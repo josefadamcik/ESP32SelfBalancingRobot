@@ -1,14 +1,14 @@
 #include "pid.h"
 
-double Pid::execute(double newInputAngle) {
-    input = newInputAngle;
+double Pid::execute(double newInput) {
+    input = newInput;
     uint32_t time = millis();
     double error = target - input;
-    double sampleTime =
-        (time - lastPidSample) / 1000.0;  // let's sey it's in sec
-    errorSum = errorSum + error;
-    errorSum = constrain(errorSum, -300, 300);
-    output = kp * error + ki * errorSum * sampleTime +
+    double sampleTime = (time - lastPidSample) / 1000.0;  // let's sey it's in sec
+    integral += error * sampleTime;
+    // errorSum = errorSum + error;
+    // errorSum = constrain(errorSum, -300, 300);
+    output = kp * error + ki * integral +
              kd * (error - prevError) / sampleTime;
     prevError = error;
     lastPidSample = millis();
@@ -17,13 +17,13 @@ double Pid::execute(double newInputAngle) {
 }
 
 void Pid::printDebug() {
-    Serial.print("PID: KP ");
+    Serial.print(" KP ");
     Serial.print(kp);
     Serial.print(", KI ");
     Serial.print(ki);
     Serial.print(", KD ");
     Serial.print(kd);
-    Serial.print("; ");
+    Serial.println("; ");
     Serial.print("input: ");
     Serial.println(input);
     Serial.print(" target: ");
@@ -32,14 +32,14 @@ void Pid::printDebug() {
     Serial.print(output);
     Serial.print(" prev error: ");
     Serial.print(prevError);
-    Serial.print(" error sum: ");
-    Serial.print(errorSum);
+    Serial.print(" integral: ");
+    Serial.print(integral);
     Serial.print(" last time: ");
     Serial.println(lastSampleTime);
 }
 
 void Pid::reset() {
-    errorSum = 0;
+    integral = 0;
     prevError = 0;
     output = 0;
 }

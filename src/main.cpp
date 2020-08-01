@@ -17,7 +17,7 @@ static volatile bool DRAM_ATTR mpuInterrupt = false;
 static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 
 #define DEBUG_PRINT_PID
-#define DEBUG_PRINT_SPEED
+// #define DEBUG_PRINT_SPEED
 #define DEBUG_PRINT_STATE
 // #define DEBUG_PRINT_LOOP_STAT
 
@@ -37,11 +37,15 @@ struct {
     float rPidKpEdit;          // 32767.. +32767
     float rPidKiEdit;          // 32767.. +32767
     float rPidKdEdit;          // 32767.. +32767
+    float rPidSpeedKpEdit;          // 32767.. +32767
+    float rPidSpeedKiEdit;          // 32767.. +32767
     float rTargetEdit;
 
     int8_t rPidKp;  // =0..100 slider position
     int8_t rPidKi;  // =0..100 slider position
     int8_t rPidKd;  // =0..100 slider position
+    int8_t rPidSpeedKp;  // =0..100 slider position
+    int8_t rPidSpeedKi;  // =0..100 slider position
     int8_t rTargetAdjust;
     bool motorsEnabled = false;
     bool pidEnabled = false;
@@ -55,18 +59,20 @@ struct {
     double targetAdjustFromThrottle = 0;
     double leftSpeedAdjustFromSteering = 0;
     double rightSpeedAdjustFromSteering = 0;
+    double targetSpeed = 0;   
     double currentSpeed = 0;
 } State;
 
 // PID
 const double targetAngleLimit = 5;
-const double balancingAngleLimit = 10;
+const double balancingAngleLimit = 15;
 
-double const initialPidKp = 5, initialPidKi = 20, initialPikKd = 0.2;
+double const initialPidKp = 7, initialPidKi = 10, initialPidKd = 0.2;
 double const initialTargetAngle = 0;
-Pid pidAngle(initialPidKp, initialPidKi, initialPikKd, initialTargetAngle);
+Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
 
-Pid pidSpeed(0.1, 0.1, 0, 0);
+double const initialPidSpeedKp = 0.01, initialPidSpeedKi = 1, initialPidSpeedKd = 0;
+Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
 
 // ================================================================
 // ===                      INITIAL SETUP                       ===
@@ -78,15 +84,20 @@ void printDebug() {
     if (now - lastOutput > 250) {
         lastOutput = now;
 #if defined(DEBUG_PRINT_PID)
-        pidAngle.printDebug();
+        Serial.println(); Serial.println("====");
+        Serial.print("PID Speed"); pidSpeed.printDebug();
+        Serial.print("PID Angle"); pidAngle.printDebug();
 #endif
 #if defined(DEBUG_PRINT_STATE)
         Serial.print("duty ");
         Serial.print(State.dutyCycle);
-        Serial.print(" target angle ");
-        Serial.print(State.targetAngle);
+        Serial.print(" target speed ");
+        Serial.print(State.targetSpeed);
         Serial.print(" speed ");
         Serial.print(State.currentSpeed);
+        Serial.print(" target angle ");
+        Serial.print(State.targetAngle);
+        Serial.println();
         // Serial.print(" throttle: ");
         // Serial.print(State.throttle);
         // Serial.print(" thrt adj: ");
@@ -110,9 +121,13 @@ void resetRometePidKSliders() {
     RemoteXY.pidKp = 50;
     RemoteXY.pidKi = 50;
     RemoteXY.pidKd = 50;
+    RemoteXY.pidSpeedKi = 50;
+    RemoteXY.pidSpeedKp = 50;
     State.rPidKp = RemoteXY.pidKp;
     State.rPidKi = RemoteXY.pidKi;
     State.rPidKd = RemoteXY.pidKd;
+    State.rPidSpeedKp = RemoteXY.pidSpeedKp;
+    State.rPidKi = RemoteXY.pidSpeedKi;
 }
 
 void setupBluetooth() {
@@ -120,7 +135,9 @@ void setupBluetooth() {
     RemoteXY_Init();
     RemoteXY.pidKpEdit = initialPidKp;
     RemoteXY.pidKiEdit = initialPidKi;
-    RemoteXY.pidKdEdit = initialPikKd;
+    RemoteXY.pidKdEdit = initialPidKd;
+    RemoteXY.pidSpeedKpEdit = initialPidSpeedKp;
+    RemoteXY.pidSpeedKiEdit = initialPidSpeedKi;
     resetRometePidKSliders();
     RemoteXY.motorLimit = State.dutyCycleLimit;
     sprintf(RemoteXY.motorLimitOut, "%d", State.dutyCycleLimit);
@@ -152,7 +169,7 @@ boolean processMPUData() {
 }
 
 void ballance() {
-    double targetSpeed = 0; //(rps)
+    double targetSpeed = State.targetSpeed; //(rps)
     double currentSpeed = getAverageRps();
     if (State.dutyCycle < 0) {//fix the fact we always measure positive speed
         currentSpeed = -currentSpeed;
@@ -176,6 +193,7 @@ void ballance() {
 
 void turnOnBallancing() {
     pidAngle.reset();
+    pidSpeed.reset();
     State.dutyCycle = 0;
     State.throttle = 0;
     State.leftSpeedAdjustFromSteering = 0;
@@ -236,7 +254,6 @@ void updateConfigFromRemote() {
         State.rPidKpEdit = RemoteXY.pidKpEdit;
         State.rPidKiEdit = RemoteXY.pidKiEdit;
         State.rPidKdEdit = RemoteXY.pidKdEdit;
-        resetRometePidKSliders();
         pidAngle.setKeoficients(State.rPidKpEdit, State.rPidKiEdit, State.rPidKdEdit);
         keofChanged = true;
     }
@@ -259,6 +276,32 @@ void updateConfigFromRemote() {
         sprintf(RemoteXY.pidKdVal, "%f", pidAngle.kd);
     }
 
+    boolean keofPidSpeedChanged = false;
+    if (RemoteXY.pidSpeedKpEdit != State.rPidSpeedKpEdit ||
+        RemoteXY.pidSpeedKiEdit != State.rPidSpeedKiEdit) {
+        State.rPidSpeedKpEdit = RemoteXY.pidSpeedKpEdit;
+        State.rPidSpeedKiEdit = RemoteXY.pidSpeedKiEdit;
+        pidSpeed.setKeoficients(State.rPidSpeedKpEdit, State.rPidSpeedKiEdit, initialPidSpeedKd);
+        keofPidSpeedChanged = true;
+    }
+
+    if (RemoteXY.pidSpeedKp != State.rPidSpeedKp || 
+        RemoteXY.pidSpeedKi != State.rPidSpeedKi ) {
+        State.rPidSpeedKp = RemoteXY.pidSpeedKp;
+        State.rPidSpeedKi = RemoteXY.pidSpeedKi;
+        pidSpeed.setKeoficients(
+            adjustPidKoefProportionaly(State.rPidSpeedKpEdit, State.rPidSpeedKp),
+            adjustPidKoefProportionaly(State.rPidSpeedKiEdit, State.rPidSpeedKi),
+            initialPidSpeedKd
+            );
+        keofPidSpeedChanged = true;
+    }
+
+    if (keofPidSpeedChanged) {
+        sprintf(RemoteXY.pidSpeedKpVal, "%f", pidSpeed.kp);
+        sprintf(RemoteXY.pidSpeedKiVal, "%f", pidSpeed.ki);
+    }
+
     if (RemoteXY.motorLimit != State.dutyCycleLimit) {
         State.dutyCycleLimit = RemoteXY.motorLimit;
         sprintf(RemoteXY.motorLimitOut, "%d", State.dutyCycleLimit);
@@ -269,12 +312,14 @@ void updateDataForRemote() {
     RemoteXY.ledState_g = State.motorsEnabled ? 255 : 0;
     RemoteXY.ledState_r = !State.motorsEnabled ? 255 : 0;
     RemoteXY.graph_var1 = pidAngle.prevError;
-    RemoteXY.graph_var2 = pidAngle.output;
+    RemoteXY.graph_var2 = pidAngle.input;
+    RemoteXY.graph_var3 = State.targetAngle;
     // RemoteXY.graph_var3 = pidOutput;
     RemoteXY.speedGraph_var1 = State.dutyCycle;
-    RemoteXY.speedGraph_var2 = getSpeedA();
-    RemoteXY.speedGraph_var3 = getSpeedB();
-    RemoteXY.speedGraph_var4 = getSpeedA() - getSpeedB();
+    RemoteXY.speedGraph_var2 = getAverageRps();
+    RemoteXY.speedGraph_var3 = State.targetSpeed;
+    // RemoteXY.speedGraph_var3 = getSpeedB();
+    // RemoteXY.speedGraph_var4 = getSpeedA() - getSpeedB();
     RemoteXY.speed = map(State.dutyCycle, -100, 100, 0, 100);
     if (State.calibrateOnNextLoop) {
         RemoteXY.ledBallance_r = 0;
@@ -319,22 +364,21 @@ void handleSteering() {
 }
 
 void handleThrottle() {
-    // if (State.pidEnabled) {
-    //     if (State.throttle != RemoteXY.joystickA_y) {
-    //         State.throttle = RemoteXY.joystickA_y;
-    //         State.targetAdjustFromThrottle = State.throttle * 0.04;
-    //         updatePidTarget();
-    //     }
-    // } else {
-    //     State.targetAdjustFromThrottle = 0;
-    //     State.dutyCycle = RemoteXY.joystickA_y;
-    //     State.dutyCycle =
-    //         map(State.dutyCycle, -100, 100, -State.dutyCycleLimit, State.dutyCycleLimit);
-    //     if (State.motorsEnabled) {
-    //         motorsGo(State.dutyCycle + State.leftSpeedAdjustFromSteering,
-    //                  State.dutyCycle + State.rightSpeedAdjustFromSteering);
-    //     }
-    // }
+    if (State.pidEnabled) {
+        if (State.throttle != RemoteXY.joystickA_y) {
+            State.throttle = RemoteXY.joystickA_y;
+            State.targetSpeed = State.throttle * 0.005;
+        }
+    } else {
+        State.targetAdjustFromThrottle = 0;
+        State.dutyCycle = RemoteXY.joystickA_y;
+        State.dutyCycle =
+            map(State.dutyCycle, -100, 100, -State.dutyCycleLimit, State.dutyCycleLimit);
+        if (State.motorsEnabled) {
+            motorsGo(State.dutyCycle + State.leftSpeedAdjustFromSteering,
+                     State.dutyCycle + State.rightSpeedAdjustFromSteering);
+        }
+    }
 }
 
 void computeLoopTime() {
