@@ -315,7 +315,7 @@ void updateDataForRemote() {
     RemoteXY.graph_var2 = pidAngle.input;
     RemoteXY.graph_var3 = State.targetAngle;
     // RemoteXY.graph_var3 = pidOutput;
-    RemoteXY.speedGraph_var1 = State.dutyCycle;
+    RemoteXY.speedGraph_var1 = State.dutyCycle / 100.0;
     RemoteXY.speedGraph_var2 = getAverageRps();
     RemoteXY.speedGraph_var3 = State.targetSpeed;
     // RemoteXY.speedGraph_var3 = getSpeedB();
@@ -364,21 +364,21 @@ void handleSteering() {
 }
 
 void handleThrottle() {
-    if (State.pidEnabled) {
+    // if (State.pidEnabled) {
         if (State.throttle != RemoteXY.joystickA_y) {
             State.throttle = RemoteXY.joystickA_y;
             State.targetSpeed = State.throttle * 0.005;
         }
-    } else {
-        State.targetAdjustFromThrottle = 0;
-        State.dutyCycle = RemoteXY.joystickA_y;
-        State.dutyCycle =
-            map(State.dutyCycle, -100, 100, -State.dutyCycleLimit, State.dutyCycleLimit);
-        if (State.motorsEnabled) {
-            motorsGo(State.dutyCycle + State.leftSpeedAdjustFromSteering,
-                     State.dutyCycle + State.rightSpeedAdjustFromSteering);
-        }
-    }
+    // } else {
+    //     State.targetAdjustFromThrottle = 0;
+    //     State.dutyCycle = RemoteXY.joystickA_y;
+    //     State.dutyCycle =
+    //         map(State.dutyCycle, -100, 100, -State.dutyCycleLimit, State.dutyCycleLimit);
+    //     if (State.motorsEnabled) {
+    //         motorsGo(State.dutyCycle + State.leftSpeedAdjustFromSteering,
+    //                  State.dutyCycle + State.rightSpeedAdjustFromSteering);
+    //     }
+    // }
 }
 
 void computeLoopTime() {
@@ -395,6 +395,14 @@ void computeLoopTime() {
 #endif
 }
 
+
+void handleReset() {
+    if (RemoteXY.buttonReset == 1) {
+        pidAngle.reset();
+        pidSpeed.reset();
+    }
+}
+
 void loop() {
     // ArduinoOTA.handle();
     RemoteXY_Handler();
@@ -402,6 +410,7 @@ void loop() {
     if (processingTriggered) {
         updateMotorsEnabledFromRemote();
         updatePidEnabledFromRemote();
+        handleReset();
 
         computeSpeedInfo();
         ballance();
@@ -415,9 +424,6 @@ void loop() {
         if (!State.pidEnabled || !State.motorsEnabled) {
             motorsStop();
         }
-        // if (!State.motorsEnabled) {
-            // motorsStop();
-        // }
 
         updateDataForRemote();
         printDebug();
