@@ -67,11 +67,24 @@ struct {
 const double targetAngleLimit = 5;
 const double balancingAngleLimit = 15;
 
-double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
+// double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
+// double const initialTargetAngle = 0;
+// Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
+
+// double const initialPidSpeedKp = 0.6, initialPidSpeedKi = 23, initialPidSpeedKd = 0;
+// Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
+
+
+//1:250
+
+
+// double const initialPidKp = 10, initialPidKi = 20, initialPidKd = 0.3;
+double const initialPidKp = 12, initialPidKi = 27, initialPidKd = 0.3;
 double const initialTargetAngle = 0;
 Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
 
-double const initialPidSpeedKp = 0.6, initialPidSpeedKi = 23, initialPidSpeedKd = 0;
+//?
+double const initialPidSpeedKp = 1, initialPidSpeedKi = 0, initialPidSpeedKd = 0;
 Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
 
 // ================================================================
@@ -171,7 +184,7 @@ boolean processMPUData() {
 void ballance() {
     double targetSpeed = State.targetSpeed; //(rps)
     double currentSpeed = getAverageRps();
-    if (State.dutyCycle < 0) {//fix the fact we always measure positive speed
+    if (State.dutyCycle < 0) {//TODO: fix the fact we always measure positive speed
         currentSpeed = -currentSpeed;
     }
     State.currentSpeed = currentSpeed;
