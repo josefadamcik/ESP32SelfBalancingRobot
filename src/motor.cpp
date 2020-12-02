@@ -10,6 +10,10 @@
 const mcpwm_operator_t OPERATOR_FORWARD = MCPWM_OPR_A;
 const mcpwm_operator_t OPERATOR_BACKWARD = MCPWM_OPR_B;
 
+#define CAP0_INT_EN BIT(27)  //Capture 0 interrupt bit
+#define CAP1_INT_EN BIT(28)  //Capture 1 interrupt bit
+#define CAP2_INT_EN BIT(29)  //Capture 2 interrupt bit
+
 typedef struct {
     uint16_t pulseCount;
     double rps;
@@ -99,6 +103,54 @@ void setupPulseCounters(gpio_num_t sensA1, gpio_num_t sensA2, gpio_num_t sensB1,
     pcnt_counter_pause(PCNT_UNIT_1);
     pcnt_counter_clear(PCNT_UNIT_1);
     pcnt_counter_resume(PCNT_UNIT_1);
+}
+
+//TODO: what what this?
+typedef struct {
+    uint32_t capture_signal;
+    mcpwm_capture_signal_t sel_cap_signal;
+} capture;
+
+static void IRAM_ATTR speed_isr_handler()
+{
+    uint32_t mcpwm_intr_status;
+    capture evt;
+    // mcpwm_intr_status = MCPWM[MCPWM_UNIT_0]->int_st.val; //Read interrupt status
+    // //calculate the interval in the ISR, 
+    // //so that the interval will be always correct even when cap_queue is not handled in time and overflow.
+    // if (mcpwm_intr_status & CAP0_INT_EN) { //Check for interrupt on rising edge on CAP0 signal
+    //     current_cap_value[0] = mcpwm_capture_signal_get_value(MCPWM_UNIT_0, MCPWM_SELECT_CAP0); //get capture signal counter value
+    //     evt.capture_signal = (current_cap_value[0] - previous_cap_value[0]) / (rtc_clk_apb_freq_get() / 1000000);
+    //     previous_cap_value[0] = current_cap_value[0];
+    //     evt.sel_cap_signal = MCPWM_SELECT_CAP0;
+    //     xQueueSendFromISR(cap_queue, &evt, NULL);
+    // }
+    // if (mcpwm_intr_status & CAP1_INT_EN) { //Check for interrupt on rising edge on CAP0 signal
+    //     current_cap_value[1] = mcpwm_capture_signal_get_value(MCPWM_UNIT_0, MCPWM_SELECT_CAP1); //get capture signal counter value
+    //     evt.capture_signal = (current_cap_value[1] - previous_cap_value[1]) / (rtc_clk_apb_freq_get() / 1000000);
+    //     previous_cap_value[1] = current_cap_value[1];
+    //     evt.sel_cap_signal = MCPWM_SELECT_CAP1;
+    //     xQueueSendFromISR(cap_queue, &evt, NULL);
+    // }
+    // if (mcpwm_intr_status & CAP2_INT_EN) { //Check for interrupt on rising edge on CAP0 signal
+    //     current_cap_value[2] = mcpwm_capture_signal_get_value(MCPWM_UNIT_0, MCPWM_SELECT_CAP2); //get capture signal counter value
+    //     evt.capture_signal = (current_cap_value[2] - previous_cap_value[2]) / (rtc_clk_apb_freq_get() / 1000000);
+    //     previous_cap_value[2] = current_cap_value[2];
+    //     evt.sel_cap_signal = MCPWM_SELECT_CAP2;
+    //     xQueueSendFromISR(cap_queue, &evt, NULL);
+    // }
+    // MCPWM[MCPWM_UNIT_0]->int_clr.val = mcpwm_intr_status;
+}
+
+void setupMPWMSpeed(gpio_num_t sensA1, gpio_num_t sensA2, gpio_num_t sensB1, gpio_num_t sensB2) {
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_0, sensA1);
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_1, sensA2);
+    
+    mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
+    mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, MCPWM_POS_EDGE, 0);
+    MCPWM0.int_ena.val = CAP0_INT_EN | CAP1_INT_EN | CAP2_INT_EN;  //Enable interrupt on  CAP0, CAP1 and CAP2 signal
+    mcpwm_isr_register(MCPWM_UNIT_0, speed_isr_handler, NULL, ESP_INTR_FLAG_IRAM, NULL);  //Set ISR Handler
+    
 }
 
 void setupMPWM(gpio_num_t pinA1, gpio_num_t pinA2, gpio_num_t pinB1,

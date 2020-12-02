@@ -13,6 +13,7 @@
 
 void setupMPWM(gpio_num_t pinA1, gpio_num_t pinA2, gpio_num_t pinB1, gpio_num_t pinB2);
 void setupPulseCounters(gpio_num_t sensA1, gpio_num_t sensA2, gpio_num_t sensB1, gpio_num_t sensB2);
+void setupMPWMSpeed(gpio_num_t sensA1, gpio_num_t sensA2, gpio_num_t sensB1, gpio_num_t sensB2);
 void motorsGo(float speedLeft, float speedRight);
 void motorGo(uint8_t motor, float speed);
 void motorsStop();

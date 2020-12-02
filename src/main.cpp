@@ -166,7 +166,8 @@ void setup() {
     // setupOTA();
     // waitForOTA();
     setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
-    setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
+    setupMPWMSpeed(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
+    //setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
     setupBluetooth();
     Serial.println("setup done");
 }
