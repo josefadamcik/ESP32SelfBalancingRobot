@@ -65,7 +65,7 @@ struct {
 
 // PID
 const double targetAngleLimit = 5;
-const double balancingAngleLimit = 15;
+const double balancingAngleLimit = 25;
 
 // double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
 // double const initialTargetAngle = 0;
@@ -229,7 +229,7 @@ void updatePidEnabledFromRemote() {
     bool shouldBeOn = State.motorsEnabled && RemoteXY.pidOn && validAngle;
     if (!State.pidEnabled && shouldBeOn) {
         turnOnBallancing();
-    } else if (State.pidEnabled && !shouldBeOn) {
+    } else if (State.pidEnabled && !shouldBeOn)  {
         turnOffBalancing();
     }
     State.pidEnabled = shouldBeOn;
