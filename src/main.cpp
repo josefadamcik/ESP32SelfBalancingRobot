@@ -16,9 +16,9 @@ static volatile bool DRAM_ATTR mpuInterrupt = false;
 
 static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 
-#define DEBUG_PRINT_PID
-// #define DEBUG_PRINT_SPEED
-#define DEBUG_PRINT_STATE
+// #define DEBUG_PRINT_PID
+#define DEBUG_PRINT_SPEED
+// #define DEBUG_PRINT_STATE
 // #define DEBUG_PRINT_LOOP_STAT
 
 // MOTORS
@@ -26,10 +26,10 @@ static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 #define MOTOR_A2 GPIO_NUM_33
 #define MOTOR_B1 GPIO_NUM_25
 #define MOTOR_B2 GPIO_NUM_26
-#define MOTORA_S1 GPIO_NUM_4
-#define MOTORA_S2 GPIO_NUM_16
-#define MOTORB_S1 GPIO_NUM_5
-#define MOTORB_S2 GPIO_NUM_17
+#define MOTORA_S1 GPIO_NUM_5
+#define MOTORA_S2 GPIO_NUM_17
+#define MOTORB_S1 GPIO_NUM_4
+#define MOTORB_S2 GPIO_NUM_16
 
 struct {
     float imuYawPitchRoll[3];  // [yaw, pitch, roll]   yaw/pitch/roll container
@@ -67,24 +67,11 @@ struct {
 const double targetAngleLimit = 5;
 const double balancingAngleLimit = 25;
 
-// double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
-// double const initialTargetAngle = 0;
-// Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
-
-// double const initialPidSpeedKp = 0.6, initialPidSpeedKi = 23, initialPidSpeedKd = 0;
-// Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
-
-
-//1:250
-
-
-// double const initialPidKp = 10, initialPidKi = 20, initialPidKd = 0.3;
-double const initialPidKp = 12, initialPidKi = 27, initialPidKd = 0.3;
+double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
 double const initialTargetAngle = 0;
 Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
 
-//?
-double const initialPidSpeedKp = 1, initialPidSpeedKi = 0, initialPidSpeedKd = 0;
+double const initialPidSpeedKp = 0.6, initialPidSpeedKi = 23, initialPidSpeedKd = 0;
 Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
 
 // ================================================================
@@ -166,8 +153,7 @@ void setup() {
     // setupOTA();
     // waitForOTA();
     setupMPWM(MOTOR_A1, MOTOR_A2, MOTOR_B1, MOTOR_B2);
-    setupMPWMSpeed(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
-    //setupPulseCounters(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
+    setupEncoders(MOTORA_S1, MOTORA_S2, MOTORB_S1, MOTORB_S2);
     setupBluetooth();
     Serial.println("setup done");
 }
