@@ -59,7 +59,6 @@ void computeSpeedInfoForChannel(capture_speed_info_t &captureSpeedInfo, speed_in
     }
 }
 
-/** Don't run this too often. 10ms seems to be ok, less might increase error.*/
 void computeSpeedInfo() {
     int64_t time = esp_timer_get_time();
     computeSpeedInfoForChannel(speedCaptureInfoA, speedInfoA, time);

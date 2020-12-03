@@ -25,7 +25,7 @@ void Pid::printDebug() {
     Serial.print(kd);
     Serial.println("; ");
     Serial.print("input: ");
-    Serial.println(input);
+    Serial.print(input);
     Serial.print(" target: ");
     Serial.println(target);
     Serial.print(" output: ");

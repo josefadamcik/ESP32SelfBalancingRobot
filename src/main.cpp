@@ -16,9 +16,9 @@ static volatile bool DRAM_ATTR mpuInterrupt = false;
 
 static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 
-// #define DEBUG_PRINT_PID
-#define DEBUG_PRINT_SPEED
-// #define DEBUG_PRINT_STATE
+#define DEBUG_PRINT_PID
+// #define DEBUG_PRINT_SPEED
+#define DEBUG_PRINT_STATE
 // #define DEBUG_PRINT_LOOP_STAT
 
 // MOTORS
@@ -30,6 +30,12 @@ static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 #define MOTORA_S2 GPIO_NUM_17
 #define MOTORB_S1 GPIO_NUM_16
 #define MOTORB_S2 GPIO_NUM_4
+
+typedef enum {
+    GROUND,
+    BALLANCING,
+    BALLANCED
+} ballance_state_t;
 
 struct {
     float imuYawPitchRoll[3];  // [yaw, pitch, roll]   yaw/pitch/roll container
@@ -61,17 +67,19 @@ struct {
     double rightSpeedAdjustFromSteering = 0;
     double targetSpeed = 0;   
     double currentSpeed = 0;
+    ballance_state_t ballanceState = GROUND;
 } State;
 
 // PID
-const double targetAngleLimit = 5;
+const double targetAngleLimit = 5;//todo: use or delete?
 const double balancingAngleLimit = 25;
+const double startBalancingAngleLimit = 5;
 
-double const initialPidKp = 5, initialPidKi = 30, initialPidKd = 0.2;
+double const initialPidKp = 2.6, initialPidKi = 10, initialPidKd = 0.1;
 double const initialTargetAngle = 0;
 Pid pidAngle(initialPidKp, initialPidKi, initialPidKd, initialTargetAngle);
 
-double const initialPidSpeedKp = 0.6, initialPidSpeedKi = 23, initialPidSpeedKd = 0;
+double const initialPidSpeedKp = 0.5, initialPidSpeedKi = 5, initialPidSpeedKd = 0.1;
 Pid pidSpeed(initialPidSpeedKp, initialPidSpeedKi, initialPidSpeedKd, 0);
 
 // ================================================================
@@ -89,7 +97,18 @@ void printDebug() {
         Serial.print("PID Angle"); pidAngle.printDebug();
 #endif
 #if defined(DEBUG_PRINT_STATE)
-        Serial.print("duty ");
+        switch (State.ballanceState) {
+            case GROUND:
+                Serial.print("GROUND ");
+                break;
+            case BALLANCING:
+                Serial.print("BALLANCING ");
+                break;
+            default:
+                Serial.print("(?n/a?) ");
+                break;
+        }
+        Serial.print(" duty ");
         Serial.print(State.dutyCycle);
         Serial.print(" target speed ");
         Serial.print(State.targetSpeed);
@@ -173,10 +192,10 @@ void ballance() {
     double currentSpeed = getAverageRps();
     State.currentSpeed = currentSpeed;
     pidSpeed.setTarget(targetSpeed); 
-    State.targetAngle = -pidSpeed.execute(currentSpeed);
+    State.targetAngle = pidSpeed.execute(currentSpeed);
 
     pidAngle.setTarget(State.targetAngle);
-    double pidOutput = pidAngle.execute(State.inputAngle);
+    double pidOutput = -pidAngle.execute(State.inputAngle);
     //from here the speed is more like duty cycle for motor.
     double pidSpeed = constrain(pidOutput, -State.dutyCycleLimit, State.dutyCycleLimit);
     if (State.pidEnabled && State.motorsEnabled) {
@@ -208,16 +227,6 @@ void turnOffBalancing() {
     RemoteXY.joystickA_y = 0;
 }
 
-void updatePidEnabledFromRemote() {
-    bool validAngle = abs(State.inputAngle) < balancingAngleLimit;
-    bool shouldBeOn = State.motorsEnabled && RemoteXY.pidOn && validAngle;
-    if (!State.pidEnabled && shouldBeOn) {
-        turnOnBallancing();
-    } else if (State.pidEnabled && !shouldBeOn)  {
-        turnOffBalancing();
-    }
-    State.pidEnabled = shouldBeOn;
-}
 
 void updateMotorsEnabledFromRemote() {
     State.motorsEnabled = RemoteXY.motorsOn == 1;
@@ -400,16 +409,42 @@ void handleReset() {
     }
 }
 
+void updateState() {
+    double absAngle = abs(State.inputAngle);
+    if (State.ballanceState == GROUND) {
+        if (absAngle <= startBalancingAngleLimit) {
+            //start ballancing
+            State.ballanceState = BALLANCING;
+        }
+    } else if (State.ballanceState == BALLANCING) {
+        if (absAngle > balancingAngleLimit) {
+            //fall down
+            State.ballanceState = GROUND;
+        }
+    }
+
+    bool shouldBeOn = State.motorsEnabled && 
+        RemoteXY.pidOn && 
+        State.ballanceState != GROUND;
+    
+    if (!State.pidEnabled && shouldBeOn) {
+        turnOnBallancing();
+    } else if (State.pidEnabled && !shouldBeOn)  {
+        turnOffBalancing();
+    }
+    State.pidEnabled = shouldBeOn;
+}
+
 void loop() {
     // ArduinoOTA.handle();
     RemoteXY_Handler();
     boolean processingTriggered = processMPUData();
     if (processingTriggered) {
         updateMotorsEnabledFromRemote();
-        updatePidEnabledFromRemote();
         handleReset();
 
         computeSpeedInfo();
+        updateState();
         ballance();
 
         handleCalibration();
