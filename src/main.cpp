@@ -22,14 +22,14 @@ static void IRAM_ATTR dmpDataReady() { mpuInterrupt = true; }
 // #define DEBUG_PRINT_LOOP_STAT
 
 // MOTORS
-#define MOTOR_A1 GPIO_NUM_32
-#define MOTOR_A2 GPIO_NUM_33
+#define MOTOR_A1 GPIO_NUM_33
+#define MOTOR_A2 GPIO_NUM_32
 #define MOTOR_B1 GPIO_NUM_25
 #define MOTOR_B2 GPIO_NUM_26
 #define MOTORA_S1 GPIO_NUM_5
 #define MOTORA_S2 GPIO_NUM_17
-#define MOTORB_S1 GPIO_NUM_4
-#define MOTORB_S2 GPIO_NUM_16
+#define MOTORB_S1 GPIO_NUM_16
+#define MOTORB_S2 GPIO_NUM_4
 
 struct {
     float imuYawPitchRoll[3];  // [yaw, pitch, roll]   yaw/pitch/roll container
@@ -171,9 +171,6 @@ boolean processMPUData() {
 void ballance() {
     double targetSpeed = State.targetSpeed; //(rps)
     double currentSpeed = getAverageRps();
-    if (State.dutyCycle < 0) {//TODO: fix the fact we always measure positive speed
-        currentSpeed = -currentSpeed;
-    }
     State.currentSpeed = currentSpeed;
     pidSpeed.setTarget(targetSpeed); 
     State.targetAngle = -pidSpeed.execute(currentSpeed);

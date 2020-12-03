@@ -34,28 +34,36 @@ static volatile capture_speed_info_t DRAM_ATTR speedCaptureInfoA;
 static volatile capture_speed_info_t DRAM_ATTR speedCaptureInfoB;
 
 
-void computeSpeedInfoForChannel(capture_speed_info_t &captureSpeedInfo, speed_info_t &speedInfo) {
-    uint32_t timePerRotationWheel = (uint32_t)captureSpeedInfo.period * PULSE_PER_REVOLUTION; //us
-    double rpsWheel = 1000000.0 / timePerRotationWheel;
-    //TODO: determine not moving state 
-    speedInfo.rps = rpsWheel;
-    speedInfo.angularVelocity = M_TWOPI * rpsWheel;
-    speedInfo.velocity =
-        speedInfo.angularVelocity * WHEEL_RADIUS_MM;  // mm/s
-    // Serial.print("pulse "); Serial.print(unit); Serial.print(" ");
-    // Serial.print(speedInfo[unit]->pulseCount); Serial.print(" rps ");
-    // Serial.print(speedInfo[unit]->rps); Serial.print(" angular velocity ");
-    // Serial.print(speedInfo[unit]->angularVelocity); 
-    // Serial.print(" velocity "); Serial.print(speedInfo[unit]->velocity); Serial.println();
+void computeSpeedInfoForChannel(capture_speed_info_t &captureSpeedInfo, speed_info_t &speedInfo, int64_t time) {
+    int64_t period = captureSpeedInfo.period;
+    if (time >= captureSpeedInfo.lastMeasurement + SPEED_MEASUREMENT_PERIOD_MS * 1000.0) {
+        //if we got no new update for last 10ms say the speed is 0
+        speedInfo.rps = 0;
+        speedInfo.angularVelocity = 0;
+        speedInfo.velocity = 0;
+    } else {
+        if (time > captureSpeedInfo.lastMeasurement + period) {
+            //if the time since the last measurement is longer than the period, assume period is actually the difference
+            period = time - captureSpeedInfo.lastMeasurement;
+        }
+        uint32_t timePerRotationWheel = (uint32_t)period * PULSE_PER_REVOLUTION; //us
+        
+        double sign = 1.0;
+        if (captureSpeedInfo.direction == 1) {
+            sign = -1.0;
+        }
+        double rpsWheel = sign * 1000000.0 / timePerRotationWheel;
+        speedInfo.rps = rpsWheel;
+        speedInfo.angularVelocity = M_TWOPI * rpsWheel;
+        speedInfo.velocity = speedInfo.angularVelocity * WHEEL_RADIUS_MM;  // mm/s
+    }
 }
 
 /** Don't run this too often. 10ms seems to be ok, less might increase error.*/
 void computeSpeedInfo() {
-    uint32_t now = millis();
-    double timeCoef = 1000.0 / (now - lastSpeedMeasurementMs);  // per sec
-    computeSpeedInfoForChannel(speedCaptureInfoA, speedInfoA);
-    computeSpeedInfoForChannel(speedCaptureInfoB, speedInfoB);
-    lastSpeedMeasurementMs = now;
+    int64_t time = esp_timer_get_time();
+    computeSpeedInfoForChannel(speedCaptureInfoA, speedInfoA, time);
+    computeSpeedInfoForChannel(speedCaptureInfoB, speedInfoB, time);
 }
 
 double getAverageRps() { return (speedInfoA.rps + speedInfoB.rps) / 2;}
